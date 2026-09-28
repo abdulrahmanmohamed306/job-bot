@@ -1,35 +1,88 @@
 import os
+import json
 import threading
 import time
 import feedparser
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask
+from flask import Flask, request
 from playwright.sync_api import sync_playwright
 
 # ========================================================
-# 1. إعداد سيرفر Flask لإرضاء Render Web Service
+# 1. إعداد سيرفر Flask والـ Webhook
 # ========================================================
 app = Flask(__name__)
 
+TELEGRAM_TOKEN = "8944481402:AAEe-CI0nGfA03dJkz0dBk-iNLJGE2uGEWQ"
+ADMIN_CHAT_ID = "595651385"  # معرّفك الخاص للتحكم بـ /stats
+USERS_FILE = "users.json"
+
+# دالة تحميل قائمة المستخدمين
+def load_users():
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r") as f:
+                return set(json.load(f))
+        except Exception:
+            return {ADMIN_CHAT_ID}
+    return {ADMIN_CHAT_ID}
+
+# دالة حفظ قائمة المستخدمين
+def save_users(users_set):
+    try:
+        with open(USERS_FILE, "w") as f:
+            json.dump(list(users_set), f)
+    except Exception as e:
+        print(f"خطأ في حفظ المستخدمين: {e}")
+
+users = load_users()
+
 @app.route('/')
 def health_check():
-    return "Job Scraper Bot is running live 24/7!", 200
+    return f"Job Scraper Bot is running live 24/7! Total Users: {len(users)}", 200
+
+# لاستقبال أوامر /start و /stats من تليجرام تلقائياً
+@app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
+def telegram_webhook():
+    update = request.get_json()
+    if update and "message" in update:
+        message = update["message"]
+        chat_id = str(message.get("chat", {}).get("id"))
+        text = message.get("text", "").strip()
+
+        if text == "/start":
+            if chat_id not in users:
+                users.add(chat_id)
+                save_users(users)
+                send_direct_message(chat_id, "أهلاً بك! 🎉 تم تفعيل اشتراكك بنجاح. ستصلك إشعارات فورية بأحدث وظائف تحليل البيانات والداتا فور نشرها.")
+            else:
+                send_direct_message(chat_id, "أنت مشترك بالفعل في البوت! ستصلك الفرص فور توفرها.")
+                
+        elif text == "/stats" and chat_id == ADMIN_CHAT_ID:
+            send_direct_message(ADMIN_CHAT_ID, f"📊 **إحصائيات البوت:**\n\nعدد المشتركين الحاليين: **{len(users)}** مستخدم.")
+
+    return "OK", 200
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
+    # ضبط الـ Webhook مع تليجرام تلقائياً
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if render_url:
+        webhook_url = f"{render_url}/{TELEGRAM_TOKEN}"
+        try:
+            requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook?url={webhook_url}")
+            print(f"✅ تم تفعيل Webhook التليجرام: {webhook_url}")
+        except Exception as e:
+            print(f"خطأ في إعداد Webhook: {e}")
+            
     app.run(host="0.0.0.0", port=port)
 
-# تشغيل السيرفر الخفيف في خيط مستقل لتفادي تعطيل حلقة البوت
+# تشغيل السيرفر في خيط مستقل
 threading.Thread(target=run_flask, daemon=True).start()
 
 # ========================================================
-# 2. إعدادات البوت والبيانات الأساسية
+# 2. إعدادات الفلترة والبيانات الأساسية
 # ========================================================
-TELEGRAM_TOKEN = "8944481402:AAEe-CI0nGfA03dJkz0dBk-iNLJGE2uGEWQ"
-CHAT_ID = "595651385"
-
-# الكلمات المفتاحية المستهدفة
 KEYWORDS = [
     "تحليل بيانات", "تحليل البيانات", "محلل بيانات", "محلل البيانات", "بايثون",
     "data analyst", "data analysis", "data analytics", 
@@ -40,13 +93,11 @@ KEYWORDS = [
     "data_analysis", "data science", "علم البيانات"
 ]
 
-# الكلمات المستبعدة لتجنب الوظائف غير المخصصة
 EXCLUDED_KEYWORDS = [
     "article", "content writing", "copywriting", "academic writing", 
     "blog post", "translation", "data entry", "data typist", "manual typing", "proofreading"
 ]
 
-# معرّفات المهارات المرتبطة بتحليل البيانات على Freelancer
 FREELANCER_SKILLS = [1042, 326, 110, 322, 2033, 1900, 44, 2182, 127, 439, 269, 889, 1282]
 freelancer_skills_query = "&".join([f"jobs[]={s}" for s in FREELANCER_SKILLS])
 
@@ -66,7 +117,7 @@ RSS_FEEDS = [
 sent_jobs = set()
 
 # ========================================================
-# 3. الدوال المساعدة للفلترة وإرسال التنبيهات
+# 3. الدوال المساعدة والفلترة وإرسال الجماعي
 # ========================================================
 def extract_categories_and_tags(entry):
     categories = []
@@ -82,20 +133,28 @@ def extract_categories_and_tags(entry):
 
 def is_relevant_job(title, summary, categories=""):
     text_to_check = f"{title} {summary} {categories}".lower()
-    
-    # 1. استبعاد الكلمات غير التقنية
     for ex_kw in EXCLUDED_KEYWORDS:
         if ex_kw.lower() in text_to_check:
             return False
-            
-    # 2. المطابقة مع كلمات البيانات
     for kw in KEYWORDS:
         if kw.lower() in text_to_check:
             return True
-            
     return False
 
-def send_telegram_message(platform, title, link, summary):
+def send_direct_message(chat_id, text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": False
+    }
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except Exception as e:
+        print(f"خطأ إرسال فردي لـ {chat_id}: {e}")
+
+def send_telegram_message_to_all(platform, title, link, summary):
     message = (
         f"🚨 **فرصة جديدة من منصة [{platform}]**\n\n"
         f"📌 **العنوان:** {title}\n\n"
@@ -103,25 +162,14 @@ def send_telegram_message(platform, title, link, summary):
         f"🔗 [اضغط هنا للتقديم]({link})"
     )
     
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": False
-    }
+    current_users = list(users)
+    print(f"[{platform}] جاري إرسال الفرصة لـ {len(current_users)} مشترك: {title}")
     
-    try:
-        response = requests.post(url, json=payload)
-        if response.status_code == 200:
-            print(f"[{platform}] تم إرسال الفرصة بنجاح: {title}")
-        else:
-            print(f"فشل الإرسال: {response.text}")
-    except Exception as e:
-        print(f"خطأ أثناء الإرسال: {e}")
+    for u_id in current_users:
+        send_direct_message(u_id, message)
 
 # ========================================================
-# 4. دوال جلب الوظائف من المنصات المختلفة
+# 4. دوال جلب الوظائف
 # ========================================================
 def fetch_feed_content(url, use_browser=False):
     if not use_browser:
@@ -155,10 +203,8 @@ def fetch_mostaql_jobs():
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
             rows = soup.find_all('tr', class_='project-row') or soup.find_all('div', class_='project-card')
-            
             if not rows:
                 rows = soup.select("table.table-projects tbody tr, div.mrg--b-0")
-                
             for row in rows:
                 a_tag = row.find('a', href=True)
                 if a_tag and '/project/' in a_tag['href']:
@@ -197,7 +243,6 @@ def fetch_upwork_jobs():
             for card in job_cards:
                 title_elem = card.query_selector("h2 a, h3 a, a[aria-label]")
                 desc_elem = card.query_selector("span[data-test='job-description'], div[class*='description'], p")
-                
                 if title_elem:
                     title = title_elem.inner_text().strip()
                     href = title_elem.get_attribute("href")
@@ -212,25 +257,21 @@ def fetch_upwork_jobs():
 def fetch_linkedin_jobs():
     jobs = []
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    
     urls = [
         "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=Data%20Analyst&location=Egypt&f_TPR=r86400&start=0",
         "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=Data%20Analyst&f_WT=2&f_TPR=r86400&start=0"
     ]
-    
     for url in urls:
         try:
             response = requests.get(url, headers=headers, timeout=15)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 posts = soup.find_all('li')
-                
                 for post in posts:
                     title_elem = post.find('h3', class_='base-search-card__title')
                     link_elem = post.find('a', class_='base-card__full-link')
                     company_elem = post.find('h4', class_='base-search-card__subtitle')
                     location_elem = post.find('span', class_='job-search-card__location')
-                    
                     if title_elem and link_elem:
                         title = title_elem.text.strip()
                         link = link_elem['href'].split('?')[0]
@@ -240,84 +281,61 @@ def fetch_linkedin_jobs():
                         jobs.append({"title": title, "link": link, "summary": summary, "category": "Data Analytics"})
         except Exception:
             pass
-            
     return jobs
 
 # ========================================================
-# 5. دالة الفحص الدوري والتنفيذ
+# 5. حلقة الفحص الدوري
 # ========================================================
 def check_new_jobs():
     print(f"\n========================================================")
-    print(f"   📊 تقرير فحص المنصات الحية - ({time.strftime('%H:%M:%S')})")
+    print(f"   📊 تقرير فحص المنصات الحية - ({time.strftime('%H:%M:%S')}) - المشتركين: {len(users)}")
     print(f"========================================================")
     
     for feed_info in RSS_FEEDS:
         platform_name = feed_info["platform"]
-        feed_url = feed_info["url"]
-        use_browser = feed_info.get("use_browser", False)
-        
         try:
-            raw_data = fetch_feed_content(feed_url, use_browser=use_browser)
+            raw_data = fetch_feed_content(feed_info["url"], use_browser=feed_info.get("use_browser", False))
             if raw_data:
                 feed = feedparser.parse(raw_data)
-                count = len(feed.entries)
-                print(f"🟢 [{platform_name:<25}]: متصل بنجاح | قرأ ({count}) عنصر حالي.")
-                
                 for entry in reversed(feed.entries):
                     job_id = entry.link
                     if job_id not in sent_jobs:
                         sent_jobs.add(job_id)
-                        
                         title = getattr(entry, 'title', '')
                         summary_clean = getattr(entry, 'summary', '')
                         categories_text = extract_categories_and_tags(entry)
-                        
-                        summary_clean = (
-                            summary_clean.replace('<p>', '')
-                            .replace('</p>', '')
-                            .replace('<br />', '\n')
-                            .replace('<br>', '\n')
-                        )
-                        
+                        summary_clean = summary_clean.replace('<p>', '').replace('</p>', '').replace('<br />', '\n').replace('<br>', '\n')
                         if is_relevant_job(title, summary_clean, categories_text):
-                            send_telegram_message(platform_name, title, entry.link, summary_clean)
-            else:
-                print(f"🔴 [{platform_name:<25}]: فشل الاتصال / محجوب.")
+                            send_telegram_message_to_all(platform_name, title, entry.link, summary_clean)
         except Exception as e:
-            print(f"❌ [{platform_name:<25}]: خطأ - {e}")
+            print(f"❌ [{platform_name}]: خطأ - {e}")
 
     mostaql_jobs = fetch_mostaql_jobs()
-    print(f"🟢 [{'مستقل':<25}]: متصل بنجاح | قرأ ({len(mostaql_jobs)}) فرصة.")
     for job in reversed(mostaql_jobs):
         job_id = job["link"]
         if job_id and job_id not in sent_jobs:
             sent_jobs.add(job_id)
             if is_relevant_job(job["title"], job["summary"], job.get("category", "")):
-                send_telegram_message("مستقل", job["title"], job["link"], job["summary"])
+                send_telegram_message_to_all("مستقل", job["title"], job["link"], job["summary"])
 
     upwork_jobs = fetch_upwork_jobs()
-    print(f"🟢 [{'Upwork':<25}]: متصل بنجاح | قرأ ({len(upwork_jobs)}) فرصة.")
     for job in reversed(upwork_jobs):
         job_id = job["link"]
         if job_id and job_id not in sent_jobs:
             sent_jobs.add(job_id)
             if is_relevant_job(job["title"], job["summary"], job.get("category", "")):
-                send_telegram_message("Upwork", job["title"], job["link"], job["summary"])
+                send_telegram_message_to_all("Upwork", job["title"], job["link"], job["summary"])
 
     linkedin_jobs = fetch_linkedin_jobs()
-    print(f"🟢 [{'LinkedIn (مصر + Remote)':<25}]: متصل بنجاح | قرأ ({len(linkedin_jobs)}) فرصة.")
     for job in reversed(linkedin_jobs):
         job_id = job["link"]
         if job_id and job_id not in sent_jobs:
             sent_jobs.add(job_id)
             if is_relevant_job(job["title"], job["summary"], job.get("category", "")):
-                send_telegram_message("LinkedIn", job["title"], job["link"], job["summary"])
-    
-    print(f"--------------------------------------------------------\n")
+                send_telegram_message_to_all("LinkedIn", job["title"], job["link"], job["summary"])
 
 def initialize():
-    print("\nجاري التهيئة المبدئية وتخزين الوظائف السابقة لتجنب تكرار الإرسال...\n")
-    
+    print("\nجاري التهيئة وتخزين الوظائف السابقة لتجنب التكرار...\n")
     for feed_info in RSS_FEEDS:
         try:
             raw_data = fetch_feed_content(feed_info["url"], use_browser=feed_info.get("use_browser", False))
@@ -325,38 +343,22 @@ def initialize():
                 feed = feedparser.parse(raw_data)
                 for entry in feed.entries:
                     sent_jobs.add(entry.link)
-                print(f"✅ تم تأكيد الاتصال بـ: {feed_info['platform']}")
         except Exception:
             pass
 
     try:
-        mostaql_jobs = fetch_mostaql_jobs()
-        for job in mostaql_jobs:
-            if job["link"]:
-                sent_jobs.add(job["link"])
-        print(f"✅ تم تأكيد الاتصال بـ: مستقل.")
-    except Exception:
-        pass
-            
+        for job in fetch_mostaql_jobs():
+            if job["link"]: sent_jobs.add(job["link"])
+    except Exception: pass
     try:
-        upwork_jobs = fetch_upwork_jobs()
-        for job in upwork_jobs:
-            if job["link"]:
-                sent_jobs.add(job["link"])
-        print("✅ تم تأكيد الاتصال بـ: Upwork")
-    except Exception:
-        pass
-
+        for job in fetch_upwork_jobs():
+            if job["link"]: sent_jobs.add(job["link"])
+    except Exception: pass
     try:
-        linkedin_jobs = fetch_linkedin_jobs()
-        for job in linkedin_jobs:
-            if job["link"]:
-                sent_jobs.add(job["link"])
-        print("✅ تم تأكيد الاتصال بـ: LinkedIn")
-    except Exception:
-        pass
-            
-    print("\nاكتملت التهيئة بنجاح! السيرفر والبوت يعملان الآن بالسحاب...\n")
+        for job in fetch_linkedin_jobs():
+            if job["link"]: sent_jobs.add(job["link"])
+    except Exception: pass
+    print("\nاكتملت التهيئة بنجاح! البوت جاهز ويستقبل المشتركين...\n")
 
 initialize()
 
