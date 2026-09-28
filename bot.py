@@ -1,8 +1,31 @@
+import os
+import threading
+import time
 import feedparser
 import requests
-import time
+from bs4 import BeautifulSoup
+from flask import Flask
 from playwright.sync_api import sync_playwright
 
+# ========================================================
+# 1. إعداد سيرفر Flask لإرضاء Render Web Service
+# ========================================================
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "Job Scraper Bot is running live 24/7!", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# تشغيل السيرفر الخفيف في خيط مستقل لتفادي تعطيل حلقة البوت
+threading.Thread(target=run_flask, daemon=True).start()
+
+# ========================================================
+# 2. إعدادات البوت والبيانات الأساسية
+# ========================================================
 TELEGRAM_TOKEN = "8944481402:AAEe-CI0nGfA03dJkz0dBk-iNLJGE2uGEWQ"
 CHAT_ID = "595651385"
 
@@ -23,7 +46,7 @@ EXCLUDED_KEYWORDS = [
     "blog post", "translation", "data entry", "data typist", "manual typing", "proofreading"
 ]
 
-# تجميع كافة Skill IDs الخاصة بعلم وتحليل البيانات على Freelancer
+# معرّفات المهارات المرتبطة بتحليل البيانات على Freelancer
 FREELANCER_SKILLS = [1042, 326, 110, 322, 2033, 1900, 44, 2182, 127, 439, 269, 889, 1282]
 freelancer_skills_query = "&".join([f"jobs[]={s}" for s in FREELANCER_SKILLS])
 
@@ -42,6 +65,9 @@ RSS_FEEDS = [
 
 sent_jobs = set()
 
+# ========================================================
+# 3. الدوال المساعدة للفلترة وإرسال التنبيهات
+# ========================================================
 def extract_categories_and_tags(entry):
     categories = []
     if hasattr(entry, 'tags'):
@@ -94,6 +120,9 @@ def send_telegram_message(platform, title, link, summary):
     except Exception as e:
         print(f"خطأ أثناء الإرسال: {e}")
 
+# ========================================================
+# 4. دوال جلب الوظائف من المنصات المختلفة
+# ========================================================
 def fetch_feed_content(url, use_browser=False):
     if not use_browser:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -124,7 +153,6 @@ def fetch_mostaql_jobs():
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         res = requests.get(url, headers=headers, timeout=15)
         if res.status_code == 200:
-            from bs4 import BeautifulSoup
             soup = BeautifulSoup(res.text, 'html.parser')
             rows = soup.find_all('tr', class_='project-row') or soup.find_all('div', class_='project-card')
             
@@ -150,7 +178,6 @@ def fetch_upwork_jobs():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(
-                channel="chrome",
                 headless=True,
                 args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
             )
@@ -195,7 +222,6 @@ def fetch_linkedin_jobs():
         try:
             response = requests.get(url, headers=headers, timeout=15)
             if response.status_code == 200:
-                from bs4 import BeautifulSoup
                 soup = BeautifulSoup(response.text, 'html.parser')
                 posts = soup.find_all('li')
                 
@@ -217,6 +243,9 @@ def fetch_linkedin_jobs():
             
     return jobs
 
+# ========================================================
+# 5. دالة الفحص الدوري والتنفيذ
+# ========================================================
 def check_new_jobs():
     print(f"\n========================================================")
     print(f"   📊 تقرير فحص المنصات الحية - ({time.strftime('%H:%M:%S')})")
@@ -287,7 +316,7 @@ def check_new_jobs():
     print(f"--------------------------------------------------------\n")
 
 def initialize():
-    print("\nجاري التهيئة وتوسيع نطاق Skill IDs لـ Freelancer شاملة Power BI و Excel والـ Statistics...\n")
+    print("\nجاري التهيئة المبدئية وتخزين الوظائف السابقة لتجنب تكرار الإرسال...\n")
     
     for feed_info in RSS_FEEDS:
         try:
@@ -327,7 +356,7 @@ def initialize():
     except Exception:
         pass
             
-    print("\nاكتملت التهيئة! البوت يغطي الآن جميع أدوات ومهارات تحليل البيانات على Freelancer...\n")
+    print("\nاكتملت التهيئة بنجاح! السيرفر والبوت يعملان الآن بالسحاب...\n")
 
 initialize()
 
