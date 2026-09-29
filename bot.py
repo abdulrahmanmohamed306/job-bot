@@ -8,39 +8,49 @@ from bs4 import BeautifulSoup
 from flask import Flask, request
 
 # ========================================================
-# 1. إعداد سيرفر Flask والـ Webhook
+# 1. إعداد سيرفر Flask وقاعدة البيانات السحابية (JSONBin)
 # ========================================================
 app = Flask(__name__)
 
 TELEGRAM_TOKEN = "8944481402:AAEe-CI0nGfA03dJkz0dBk-iNLJGE2uGEWQ"
 ADMIN_CHAT_ID = "595651385"  # معرّفك الخاص للتحكم بـ /stats
-USERS_FILE = "users.json"
 
-# دالة تحميل قائمة المستخدمين
+BIN_ID = "6abbabb6ffd5d160533b52b6"
+API_KEY = "$2a$10$EajWbmH5WUuF5mKv4WDsnOR9T8wJeueARqCiGkaTycmGoaFAx05w6"
+
+JSONBIN_URL = f"https://api.jsonbin.io/v3/b/{BIN_ID}"
+HEADERS = {
+    "Content-Type": "application/json",
+    "X-Master-Key": API_KEY
+}
+
 def load_users():
-    if os.path.exists(USERS_FILE):
-        try:
-            with open(USERS_FILE, "r") as f:
-                return set(json.load(f))
-        except Exception:
-            return {ADMIN_CHAT_ID}
+    try:
+        res = requests.get(f"{JSONBIN_URL}/latest", headers=HEADERS, timeout=10)
+        if res.status_code == 200:
+            data = res.json().get("record", [])
+            return set(str(uid) for uid in data)
+        else:
+            print(f"تنبيه JSONBin: استجابة برقم {res.status_code}")
+    except Exception as e:
+        print(f"خطأ في قراءة قاعدة البيانات السحابية: {e}")
     return {ADMIN_CHAT_ID}
 
-# دالة حفظ قائمة المستخدمين
 def save_users(users_set):
     try:
-        with open(USERS_FILE, "w") as f:
-            json.dump(list(users_set), f)
+        payload = list(users_set)
+        res = requests.put(JSONBIN_URL, json=payload, headers=HEADERS, timeout=10)
+        if res.status_code == 200:
+            print(f"✅ تم تحديث قائمة المستخدمين بالسحاب ({len(payload)} مستخدم)")
     except Exception as e:
-        print(f"خطأ في حفظ المستخدمين: {e}")
+        print(f"خطأ في حفظ المستخدمين في السحاب: {e}")
 
 users = load_users()
 
 @app.route('/')
 def health_check():
-    return f"Job Scraper Bot is running live 24/7! Total Users: {len(users)}", 200
+    return f"Job Scraper Bot is running live 24/7! Total Cloud Users: {len(users)}", 200
 
-# استقبال أوامر /start و /stats و /stop من تليجرام
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def telegram_webhook():
     update = request.get_json()
@@ -53,8 +63,23 @@ def telegram_webhook():
             if chat_id not in users:
                 users.add(chat_id)
                 save_users(users)
-                send_direct_message(chat_id, "أهلاً بك! 🎉 تم تفعيل اشتراكك بنجاح. ستصلك إشعارات فورية بأحدث وظائف تحليل البيانات والداتا فور نشرها.")
-                # إشعار فوري لك كـ Admin
+                welcome_msg = (
+                    "أهلاً بك! 🎉 تم تفعيل اشتراكك بنجاح.\n\n"
+                    "🤖 **يقوم هذا البوت برصد وجلب أحدث فرص وتحليلات البيانات (Data Analysis) فور نشرها من المنصات التالية:**\n"
+                    "• 🟢 **Upwork**\n"
+                    "• 🟢 **LinkedIn** (مصر و Remote)\n"
+                    "• 🟢 **Wuzzuf** (وظف - مصر و Remote)\n"
+                    "• 🟢 **Freelancer**\n"
+                    "• 🟢 **مستقل (Mostaql)**\n"
+                    "• 🟢 **نفذلي (Nafazly)**\n"
+                    "• 🟢 **خمسات (Khamsat)**\n"
+                    "• 🟢 **كفيل (Kafiil)**\n"
+                    "• 🟢 **PeoplePerHour**\n"
+                    "• 🟢 **We Work Remotely**\n"
+                    "• 🟢 **Guru & Truelancer**\n\n"
+                    "⚡️ ستصلك الإشعارات فور توفر أي فرصة جديدة!"
+                )
+                send_direct_message(chat_id, welcome_msg)
                 send_direct_message(ADMIN_CHAT_ID, f"🔔 **مشترك جديد انضم للبوت!**\nID: `{chat_id}`\nإجمالي المشتركين الآن: **{len(users)}**")
             else:
                 send_direct_message(chat_id, "أنت مشترك بالفعل في البوت! ستصلك الفرص فور توفرها.")
@@ -69,13 +94,12 @@ def telegram_webhook():
                 send_direct_message(chat_id, "أنت غير مشترك في البوت حالياً.")
 
         elif text == "/stats" and chat_id == ADMIN_CHAT_ID:
-            send_direct_message(ADMIN_CHAT_ID, f"📊 **إحصائيات البوت:**\n\nعدد المشتركين الحاليين: **{len(users)}** مستخدم.")
+            send_direct_message(ADMIN_CHAT_ID, f"📊 **إحصائيات البوت:**\n\nعدد المشتركين الدائمين (السحاب): **{len(users)}** مستخدم.")
 
     return "OK", 200
 
 def set_webhook_auto():
     time.sleep(3)
-    # رابط سيرفرك المباشر على Render
     webhook_url = f"https://job-bot-bfhd.onrender.com/{TELEGRAM_TOKEN}"
     try:
         res = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook?url={webhook_url}")
@@ -111,7 +135,6 @@ EXCLUDED_KEYWORDS = [
 FREELANCER_SKILLS = [1042, 326, 110, 322, 2033, 1900, 44, 2182, 127, 439, 269, 889, 1282]
 freelancer_skills_query = "&".join([f"jobs[]={s}" for s in FREELANCER_SKILLS])
 
-# الاعتماد على تغذية RSS المستقرة المباشرة لـ Upwork و Freelancer و Guru
 RSS_FEEDS = [
     {
         "platform": "Upwork (Data Analyst)",
@@ -127,13 +150,28 @@ RSS_FEEDS = [
         "platform": "Guru",
         "url": "https://www.guru.com/rss/jobs/q/data-analysis/",
         "use_browser": False
+    },
+    {
+        "platform": "We Work Remotely (Data)",
+        "url": "https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss",
+        "use_browser": False
+    },
+    {
+        "platform": "PeoplePerHour",
+        "url": "https://www.peopleperhour.com/rss/freelance-data-analysis-jobs",
+        "use_browser": False
+    },
+    {
+        "platform": "Truelancer",
+        "url": "https://www.truelancer.com/rss/data-analysis-jobs",
+        "use_browser": False
     }
 ]
 
 sent_jobs = set()
 
 # ========================================================
-# 3. الدوال المساعدة والفلترة وإرسال الجماعي
+# 3. الدوال المساعدة والفلترة والإرسال الجماعي
 # ========================================================
 def extract_categories_and_tags(entry):
     categories = []
@@ -185,7 +223,7 @@ def send_telegram_message_to_all(platform, title, link, summary):
         send_direct_message(u_id, message)
 
 # ========================================================
-# 4. دوال جلب الوظائف
+# 4. دوال جلب الوظائف المخصصة
 # ========================================================
 def fetch_feed_content(url, use_browser=False):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -194,6 +232,61 @@ def fetch_feed_content(url, use_browser=False):
         return res.content if res.status_code == 200 else None
     except Exception:
         return None
+
+def fetch_nafazly_jobs():
+    """ جلب أحدث المشاريع من منصة نفذلي (Nafazly) """
+    jobs = []
+    try:
+        url = "https://nafazly.com/projects"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        res = requests.get(url, headers=headers, timeout=15)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            # البحث عن عناصر المشاريع في نفذلي
+            cards = soup.find_all('div', class_='project-card') or soup.select('.project-item, div[class*="project"]')
+            for card in cards:
+                a_tag = card.find('a', href=True)
+                if a_tag and '/project/' in a_tag['href']:
+                    title = a_tag.text.strip()
+                    link = a_tag['href']
+                    if not link.startswith('http'):
+                        link = f"https://nafazly.com{link}"
+                    desc_elem = card.find('p') or card.find('div', class_='description')
+                    summary = desc_elem.text.strip() if desc_elem else "مشروع جديد على منصة نفذلي"
+                    jobs.append({"title": title, "link": link, "summary": summary, "category": "نفذلي"})
+    except Exception:
+        pass
+    return jobs
+
+def fetch_wuzzuf_jobs():
+    jobs = []
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    urls = [
+        "https://wuzzuf.net/search/jobs/?q=data+analyst&a=hpb",
+        "https://wuzzuf.net/search/jobs/?filters%5Bwork_place_type%5D%5B0%5D=remote&q=data+analyst"
+    ]
+    for url in urls:
+        try:
+            res = requests.get(url, headers=headers, timeout=15)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.text, 'html.parser')
+                cards = soup.find_all('div', class_='css-1g2322n') or soup.find_all('div', class_='css-p2f64j')
+                for card in cards:
+                    title_elem = card.find('a', class_='css-o171kl') or card.find('h2')
+                    if title_elem:
+                        a_tag = title_elem.find('a') if title_elem.name != 'a' else title_elem
+                        if a_tag and 'href' in a_tag.attrs:
+                            title = a_tag.text.strip()
+                            link = a_tag['href']
+                            if not link.startswith('http'):
+                                link = f"https://wuzzuf.net{link}"
+                            company_elem = card.find('a', class_='css-17s97q8')
+                            company = company_elem.text.strip() if company_elem else "Wuzzuf Employer"
+                            summary = f"شركة: {company} | وظيفة تحليل بيانات عبر Wuzzuf (مصر/Remote)."
+                            jobs.append({"title": title, "link": link, "summary": summary, "category": "Wuzzuf"})
+        except Exception:
+            pass
+    return jobs
 
 def fetch_mostaql_jobs():
     jobs = []
@@ -216,6 +309,48 @@ def fetch_mostaql_jobs():
                     desc_tag = row.find('p') or row.find('td', class_='project-brief')
                     summary = desc_tag.text.strip() if desc_tag else title
                     jobs.append({"title": title, "link": link, "summary": summary, "category": "مستقل"})
+    except Exception:
+        pass
+    return jobs
+
+def fetch_khamsat_jobs():
+    jobs = []
+    try:
+        url = "https://khamsat.com/community/requests"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        res = requests.get(url, headers=headers, timeout=15)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            rows = soup.find_all('tr', class_='forum_post') or soup.find_all('td', class_='thread_title')
+            for row in rows:
+                a_tag = row.find('a', href=True)
+                if a_tag and '/community/requests/' in a_tag['href']:
+                    title = a_tag.text.strip()
+                    link = a_tag['href']
+                    if not link.startswith('http'):
+                        link = f"https://khamsat.com{link}"
+                    jobs.append({"title": title, "link": link, "summary": "طلب خدمة جديد على منصة خمسات", "category": "خمسات"})
+    except Exception:
+        pass
+    return jobs
+
+def fetch_kafiil_jobs():
+    jobs = []
+    try:
+        url = "https://kafiil.com/projects"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        res = requests.get(url, headers=headers, timeout=15)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            cards = soup.find_all('div', class_='project-item') or soup.find_all('a', class_='title')
+            for card in cards:
+                a_tag = card if card.name == 'a' else card.find('a', href=True)
+                if a_tag and '/project/' in a_tag.get('href', ''):
+                    title = a_tag.text.strip()
+                    link = a_tag['href']
+                    if not link.startswith('http'):
+                        link = f"https://kafiil.com{link}"
+                    jobs.append({"title": title, "link": link, "summary": "مشروع جديد على منصة كفيل", "category": "كفيل"})
     except Exception:
         pass
     return jobs
@@ -250,11 +385,11 @@ def fetch_linkedin_jobs():
     return jobs
 
 # ========================================================
-# 5. حلقة الفحص الدوري
+# 5. حلقة الفحص الدوري الشاملة
 # ========================================================
 def check_new_jobs():
     print(f"\n========================================================")
-    print(f"   📊 تقرير فحص المنصات الحية - ({time.strftime('%H:%M:%S')}) - المشتركين: {len(users)}")
+    print(f"   📊 تقرير فحص المنصات الحية - ({time.strftime('%H:%M:%S')}) - المشتركين بالسحاب: {len(users)}")
     print(f"========================================================")
     
     for feed_info in RSS_FEEDS:
@@ -263,7 +398,6 @@ def check_new_jobs():
             raw_data = fetch_feed_content(feed_info["url"], use_browser=feed_info.get("use_browser", False))
             if raw_data:
                 feed = feedparser.parse(raw_data)
-                print(f"🟢 [{platform_name}]: تم سحب {len(feed.entries)} فرصة من RSS.")
                 for entry in reversed(feed.entries):
                     job_id = entry.link
                     if job_id not in sent_jobs:
@@ -277,21 +411,26 @@ def check_new_jobs():
         except Exception as e:
             print(f"❌ [{platform_name}]: خطأ - {e}")
 
-    mostaql_jobs = fetch_mostaql_jobs()
-    for job in reversed(mostaql_jobs):
-        job_id = job["link"]
-        if job_id and job_id not in sent_jobs:
-            sent_jobs.add(job_id)
-            if is_relevant_job(job["title"], job["summary"], job.get("category", "")):
-                send_telegram_message_to_all("مستقل", job["title"], job["link"], job["summary"])
+    custom_sources = [
+        ("Wuzzuf", fetch_wuzzuf_jobs),
+        ("مستقل", fetch_mostaql_jobs),
+        ("نفذلي", fetch_nafazly_jobs),
+        ("خمسات", fetch_khamsat_jobs),
+        ("كفيل", fetch_kafiil_jobs),
+        ("LinkedIn", fetch_linkedin_jobs)
+    ]
 
-    linkedin_jobs = fetch_linkedin_jobs()
-    for job in reversed(linkedin_jobs):
-        job_id = job["link"]
-        if job_id and job_id not in sent_jobs:
-            sent_jobs.add(job_id)
-            if is_relevant_job(job["title"], job["summary"], job.get("category", "")):
-                send_telegram_message_to_all("LinkedIn", job["title"], job["link"], job["summary"])
+    for name, fetch_fn in custom_sources:
+        try:
+            jobs_list = fetch_fn()
+            for job in reversed(jobs_list):
+                job_id = job["link"]
+                if job_id and job_id not in sent_jobs:
+                    sent_jobs.add(job_id)
+                    if is_relevant_job(job["title"], job["summary"], job.get("category", "")):
+                        send_telegram_message_to_all(name, job["title"], job["link"], job["summary"])
+        except Exception as e:
+            print(f"❌ [{name}]: خطأ - {e}")
 
 def initialize():
     print("\nجاري التهيئة وتخزين الوظائف السابقة لتجنب التكرار...\n")
@@ -305,15 +444,13 @@ def initialize():
         except Exception:
             pass
 
-    try:
-        for job in fetch_mostaql_jobs():
-            if job["link"]: sent_jobs.add(job["link"])
-    except Exception: pass
-    try:
-        for job in fetch_linkedin_jobs():
-            if job["link"]: sent_jobs.add(job["link"])
-    except Exception: pass
-    print("\nاكتملت التهيئة بنجاح! البوت جاهز ويستقبل المشتركين...\n")
+    for _, fetch_fn in [("Wuzzuf", fetch_wuzzuf_jobs), ("مستقل", fetch_mostaql_jobs), ("نفذلي", fetch_nafazly_jobs), ("خمسات", fetch_khamsat_jobs), ("كفيل", fetch_kafiil_jobs), ("LinkedIn", fetch_linkedin_jobs)]:
+        try:
+            for job in fetch_fn():
+                if job.get("link"): sent_jobs.add(job["link"])
+        except Exception: pass
+
+    print("\nاكتملت التهيئة بنجاح! البوت جاهز ومربوط بقاعدة البيانات السحابية...\n")
 
 initialize()
 
