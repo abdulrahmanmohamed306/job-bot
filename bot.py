@@ -6,7 +6,6 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, request
-from playwright.sync_api import sync_playwright
 
 # ========================================================
 # 1. إعداد سيرفر Flask والـ Webhook
@@ -41,7 +40,7 @@ users = load_users()
 def health_check():
     return f"Job Scraper Bot is running live 24/7! Total Users: {len(users)}", 200
 
-# لاستقبال أوامر /start و /stats من تليجرام تلقائياً
+# استقبال أوامر /start و /stats و /stop من تليجرام
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def telegram_webhook():
     update = request.get_json()
@@ -55,29 +54,40 @@ def telegram_webhook():
                 users.add(chat_id)
                 save_users(users)
                 send_direct_message(chat_id, "أهلاً بك! 🎉 تم تفعيل اشتراكك بنجاح. ستصلك إشعارات فورية بأحدث وظائف تحليل البيانات والداتا فور نشرها.")
+                # إشعار فوري لك كـ Admin
+                send_direct_message(ADMIN_CHAT_ID, f"🔔 **مشترك جديد انضم للبوت!**\nID: `{chat_id}`\nإجمالي المشتركين الآن: **{len(users)}**")
             else:
                 send_direct_message(chat_id, "أنت مشترك بالفعل في البوت! ستصلك الفرص فور توفرها.")
                 
+        elif text in ["/stop", "/unsubscribe"]:
+            if chat_id in users:
+                users.remove(chat_id)
+                save_users(users)
+                send_direct_message(chat_id, "تم إلغاء إشتراكك بنجاح. لن تصلك إشعارات جديدة.")
+                send_direct_message(ADMIN_CHAT_ID, f"⚠️ **مشترك ألغى اشتراكه.**\nإجمالي المشتركين الآن: **{len(users)}**")
+            else:
+                send_direct_message(chat_id, "أنت غير مشترك في البوت حالياً.")
+
         elif text == "/stats" and chat_id == ADMIN_CHAT_ID:
             send_direct_message(ADMIN_CHAT_ID, f"📊 **إحصائيات البوت:**\n\nعدد المشتركين الحاليين: **{len(users)}** مستخدم.")
 
     return "OK", 200
 
+def set_webhook_auto():
+    time.sleep(3)
+    # رابط سيرفرك المباشر على Render
+    webhook_url = f"https://job-bot-bfhd.onrender.com/{TELEGRAM_TOKEN}"
+    try:
+        res = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook?url={webhook_url}")
+        print(f"✅ نتيجة ربط الـ Webhook: {res.json()}")
+    except Exception as e:
+        print(f"خطأ في إعداد Webhook: {e}")
+
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
-    # ضبط الـ Webhook مع تليجرام تلقائياً
-    render_url = os.environ.get("RENDER_EXTERNAL_URL")
-    if render_url:
-        webhook_url = f"{render_url}/{TELEGRAM_TOKEN}"
-        try:
-            requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook?url={webhook_url}")
-            print(f"✅ تم تفعيل Webhook التليجرام: {webhook_url}")
-        except Exception as e:
-            print(f"خطأ في إعداد Webhook: {e}")
-            
+    threading.Thread(target=set_webhook_auto, daemon=True).start()
     app.run(host="0.0.0.0", port=port)
 
-# تشغيل السيرفر في خيط مستقل
 threading.Thread(target=run_flask, daemon=True).start()
 
 # ========================================================
@@ -101,7 +111,13 @@ EXCLUDED_KEYWORDS = [
 FREELANCER_SKILLS = [1042, 326, 110, 322, 2033, 1900, 44, 2182, 127, 439, 269, 889, 1282]
 freelancer_skills_query = "&".join([f"jobs[]={s}" for s in FREELANCER_SKILLS])
 
+# الاعتماد على تغذية RSS المستقرة المباشرة لـ Upwork و Freelancer و Guru
 RSS_FEEDS = [
+    {
+        "platform": "Upwork (Data Analyst)",
+        "url": "https://www.upwork.com/ab/feed/jobs/rss?q=data+analyst&sort=recency",
+        "use_browser": False
+    },
     {
         "platform": "Freelancer (All Data Skills)",
         "url": f"https://www.freelancer.com/rss.xml?{freelancer_skills_query}",
@@ -110,7 +126,7 @@ RSS_FEEDS = [
     {
         "platform": "Guru",
         "url": "https://www.guru.com/rss/jobs/q/data-analysis/",
-        "use_browser": True
+        "use_browser": False
     }
 ]
 
@@ -172,27 +188,12 @@ def send_telegram_message_to_all(platform, title, link, summary):
 # 4. دوال جلب الوظائف
 # ========================================================
 def fetch_feed_content(url, use_browser=False):
-    if not use_browser:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        try:
-            res = requests.get(url, headers=headers, timeout=15)
-            return res.content if res.status_code == 200 else None
-        except Exception:
-            return None
-    else:
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                context = browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                )
-                page = context.new_page()
-                page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                content = page.content()
-                browser.close()
-                return content
-        except Exception:
-            return None
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    try:
+        res = requests.get(url, headers=headers, timeout=15)
+        return res.content if res.status_code == 200 else None
+    except Exception:
+        return None
 
 def fetch_mostaql_jobs():
     jobs = []
@@ -215,41 +216,6 @@ def fetch_mostaql_jobs():
                     desc_tag = row.find('p') or row.find('td', class_='project-brief')
                     summary = desc_tag.text.strip() if desc_tag else title
                     jobs.append({"title": title, "link": link, "summary": summary, "category": "مستقل"})
-    except Exception:
-        pass
-    return jobs
-
-def fetch_upwork_jobs():
-    jobs = []
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
-            )
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                viewport={'width': 1366, 'height': 768}
-            )
-            page = context.new_page()
-            page.route("**/*.{png,jpg,jpeg,svg,webp}", lambda route: route.abort())
-            
-            url = "https://www.upwork.com/nx/search/jobs/?q=data%20analyst&sort=recency"
-            page.goto(url, wait_until="domcontentloaded", timeout=25000)
-            page.wait_for_timeout(3000)
-            page.evaluate("window.scrollBy(0, 600)")
-            
-            job_cards = page.query_selector_all("article, section[data-test='JobTile'], div[data-test='JobTile']")
-            for card in job_cards:
-                title_elem = card.query_selector("h2 a, h3 a, a[aria-label]")
-                desc_elem = card.query_selector("span[data-test='job-description'], div[class*='description'], p")
-                if title_elem:
-                    title = title_elem.inner_text().strip()
-                    href = title_elem.get_attribute("href")
-                    link = f"https://www.upwork.com{href}" if href and not href.startswith("http") else (href or "")
-                    summary = desc_elem.inner_text().strip() if desc_elem else "اضغط على الرابط لمشاهدة التفاصيل..."
-                    jobs.append({"title": title, "link": link, "summary": summary, "category": "Data Analysis"})
-            browser.close()
     except Exception:
         pass
     return jobs
@@ -297,6 +263,7 @@ def check_new_jobs():
             raw_data = fetch_feed_content(feed_info["url"], use_browser=feed_info.get("use_browser", False))
             if raw_data:
                 feed = feedparser.parse(raw_data)
+                print(f"🟢 [{platform_name}]: تم سحب {len(feed.entries)} فرصة من RSS.")
                 for entry in reversed(feed.entries):
                     job_id = entry.link
                     if job_id not in sent_jobs:
@@ -317,14 +284,6 @@ def check_new_jobs():
             sent_jobs.add(job_id)
             if is_relevant_job(job["title"], job["summary"], job.get("category", "")):
                 send_telegram_message_to_all("مستقل", job["title"], job["link"], job["summary"])
-
-    upwork_jobs = fetch_upwork_jobs()
-    for job in reversed(upwork_jobs):
-        job_id = job["link"]
-        if job_id and job_id not in sent_jobs:
-            sent_jobs.add(job_id)
-            if is_relevant_job(job["title"], job["summary"], job.get("category", "")):
-                send_telegram_message_to_all("Upwork", job["title"], job["link"], job["summary"])
 
     linkedin_jobs = fetch_linkedin_jobs()
     for job in reversed(linkedin_jobs):
@@ -348,10 +307,6 @@ def initialize():
 
     try:
         for job in fetch_mostaql_jobs():
-            if job["link"]: sent_jobs.add(job["link"])
-    except Exception: pass
-    try:
-        for job in fetch_upwork_jobs():
             if job["link"]: sent_jobs.add(job["link"])
     except Exception: pass
     try:
