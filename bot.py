@@ -146,13 +146,7 @@ EXCLUDED_KEYWORDS = [
 FREELANCER_SKILLS = [1042, 326, 110, 322, 2033, 1900, 44, 2182, 127, 439, 269, 889, 1282]
 freelancer_skills_query = "&".join([f"jobs[]={s}" for s in FREELANCER_SKILLS])
 
-# القائمة المنقاة بعناية للوظائف
 RSS_FEEDS = [
-    {
-        "platform": "Upwork (Data Analyst)",
-        "url": "https://www.upwork.com/ab/feed/jobs/rss?q=data%20analyst&sort=recency",
-        "use_proxy": True
-    },
     {
         "platform": "Freelancer (All Data Skills)",
         "url": f"https://www.freelancer.com/rss.xml?{freelancer_skills_query}",
@@ -167,11 +161,6 @@ RSS_FEEDS = [
         "platform": "We Work Remotely (Data)",
         "url": "https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss",
         "use_proxy": False
-    },
-    {
-        "platform": "PeoplePerHour",
-        "url": "https://www.peopleperhour.com/rss/freelance-data-analysis-jobs",
-        "use_proxy": True
     }
 ]
 
@@ -230,13 +219,13 @@ def send_telegram_message_to_all(platform, title, link, summary):
         send_direct_message(u_id, message)
 
 # ========================================================
-# 4. دوال جلب الوظائف المحسنة مع دعم ScraperAPI
+# 4. دوال جلب الوظائف المحسنة والكشط المباشر
 # ========================================================
 def fetch_feed_content(url, use_proxy=False):
     try:
         if use_proxy:
             api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url)}"
-            res = requests.get(api_url, timeout=25)
+            res = requests.get(api_url, timeout=30)
         else:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
             res = scraper.get(url, headers=headers, timeout=12)
@@ -258,7 +247,7 @@ def fetch_wuzzuf_jobs():
     for url in urls:
         try:
             api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url)}"
-            res = requests.get(api_url, timeout=25)
+            res = requests.get(api_url, timeout=30)
             print(f"🔍 [Wuzzuf via ScraperAPI] Status Code: {res.status_code}", flush=True)
             
             if res.status_code == 200:
@@ -274,6 +263,54 @@ def fetch_wuzzuf_jobs():
                         jobs.append({"title": title, "link": link, "summary": "وظيفة تحليل بيانات على منصة Wuzzuf", "category": "Wuzzuf"})
         except Exception as e:
             print(f"❌ [Wuzzuf Error]: {e}", flush=True)
+    return jobs
+
+def fetch_peopleperhour_jobs():
+    jobs = []
+    url = "https://www.peopleperhour.com/freelance-data-analysis-jobs"
+    try:
+        api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url)}"
+        res = requests.get(api_url, timeout=30)
+        print(f"🔍 [PeoplePerHour via ScraperAPI] Status Code: {res.status_code}", flush=True)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            cards = soup.select('article, div[class*="job-card"]') or soup.find_all('div', class_=lambda c: c and 'item' in c)
+            for card in cards:
+                a_tag = card.find('a', href=True)
+                if a_tag and '/freelance-jobs/' in a_tag['href']:
+                    title = a_tag.text.strip()
+                    link = a_tag['href']
+                    if not link.startswith('http'):
+                        link = f"https://www.peopleperhour.com{link}"
+                    desc_tag = card.find('p') or card.find('div', class_=lambda c: c and 'description' in c)
+                    summary = desc_tag.text.strip() if desc_tag else "فرصة جديدة على منصة PeoplePerHour"
+                    jobs.append({"title": title, "link": link, "summary": summary, "category": "PeoplePerHour"})
+    except Exception as e:
+        print(f"❌ [PeoplePerHour Error]: {e}", flush=True)
+    return jobs
+
+def fetch_upwork_jobs():
+    jobs = []
+    url = "https://www.upwork.com/nx/search/jobs/?q=data%20analysis&sort=recency"
+    try:
+        api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url)}"
+        res = requests.get(api_url, timeout=30)
+        print(f"🔍 [Upwork via ScraperAPI] Status Code: {res.status_code}", flush=True)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            articles = soup.find_all('article') or soup.select('section[data-test="JobTile"]')
+            for article in articles:
+                a_tag = article.find('a', href=True)
+                if a_tag and '/jobs/' in a_tag['href']:
+                    title = a_tag.text.strip()
+                    link = a_tag['href']
+                    if not link.startswith('http'):
+                        link = f"https://www.upwork.com{link}"
+                    summary_tag = article.find('p') or article.find('span', class_='job-description')
+                    summary = summary_tag.text.strip() if summary_tag else "فرصة جديدة على منصة Upwork"
+                    jobs.append({"title": title, "link": link, "summary": summary, "category": "Upwork"})
+    except Exception as e:
+        print(f"❌ [Upwork Error]: {e}", flush=True)
     return jobs
 
 def fetch_nafazly_jobs():
@@ -434,6 +471,8 @@ def check_new_jobs(cycle_count):
     
     if run_proxy_platforms:
         custom_sources.append(("Wuzzuf", fetch_wuzzuf_jobs))
+        custom_sources.append(("PeoplePerHour", fetch_peopleperhour_jobs))
+        custom_sources.append(("Upwork", fetch_upwork_jobs))
 
     custom_sources.extend([
         ("مستقل", fetch_mostaql_jobs),
@@ -470,8 +509,9 @@ def initialize():
             pass
 
     custom_sources = [
-        fetch_wuzzuf_jobs, fetch_mostaql_jobs, fetch_nafazly_jobs, 
-        fetch_khamsat_jobs, fetch_kafiil_jobs, fetch_linkedin_jobs
+        fetch_wuzzuf_jobs, fetch_peopleperhour_jobs, fetch_upwork_jobs,
+        fetch_mostaql_jobs, fetch_nafazly_jobs, fetch_khamsat_jobs, 
+        fetch_kafiil_jobs, fetch_linkedin_jobs
     ]
     for fetch_fn in custom_sources:
         try:
