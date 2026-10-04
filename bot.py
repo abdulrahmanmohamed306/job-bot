@@ -14,10 +14,13 @@ from flask import Flask, request
 app = Flask(__name__)
 
 TELEGRAM_TOKEN = "8944481402:AAEe-CI0nGfA03dJkz0dBk-iNLJGE2uGEWQ"
-ADMIN_CHAT_ID = "595651385"  # معرّفك الخاص للتحكم بـ /stats
+ADMIN_CHAT_ID = "595651385"
 
 BIN_ID = "6abbabb6ffd5d160533b52b6"
 API_KEY = "$2a$10$EajWbmH5WUuF5mKv4WDsnOR9T8wJeueARqCiGkaTycmGoaFAx05w6"
+
+# 🔑 مفتاح ScraperAPI الخاص بك
+SCRAPER_API_KEY = "f98dad3c712a79bf94eacfd5884d699d"
 
 JSONBIN_URL = f"https://api.jsonbin.io/v3/b/{BIN_ID}"
 HEADERS = {
@@ -25,7 +28,6 @@ HEADERS = {
     "X-Master-Key": API_KEY
 }
 
-# إنشاء جلسة cloudscraper متقدمة لتجاوز الحظر
 scraper = cloudscraper.create_scraper(
     browser={
         'browser': 'chrome',
@@ -75,7 +77,7 @@ def telegram_webhook():
                 save_users(users)
                 welcome_msg = (
                     "أهلاً بك! 🎉 تم تفعيل اشتراكك بنجاح.\n\n"
-                    "🤖 **يقوم هذا البوت برصد وجلب أحدث فرص وتحليلات البيانات (Data Analysis) فور نشرها من المنصات التالية:**\n"
+                    "🤖 **يقوم هذا البوت برصد وجلب أحدث فرص وتحليلات البيانات (Data Analysis) فور نشرها من المنصات الـ 11 التالية:**\n"
                     "• 🟢 **Upwork**\n"
                     "• 🟢 **LinkedIn** (مصر و Remote)\n"
                     "• 🟢 **Wuzzuf** (وظف - مصر و Remote)\n"
@@ -84,8 +86,9 @@ def telegram_webhook():
                     "• 🟢 **نفذلي (Nafazly)**\n"
                     "• 🟢 **خمسات (Khamsat)**\n"
                     "• 🟢 **كفيل (Kafiil)**\n"
-                    "• 🟢 **We Work Remotely**\n"
-                    "• 🟢 **Guru**\n\n"
+                    "• 🟢 **PeoplePerHour**\n"
+                    "• 🟢 **Truelancer**\n"
+                    "• 🟢 **We Work Remotely & Guru**\n\n"
                     "⚡️ ستصلك الإشعارات فور توفر أي فرصة جديدة!"
                 )
                 send_direct_message(chat_id, welcome_msg)
@@ -148,22 +151,32 @@ RSS_FEEDS = [
     {
         "platform": "Upwork (Data Analyst)",
         "url": "https://www.upwork.com/ab/feed/jobs/rss?q=data+analyst&sort=recency",
-        "use_browser": False
+        "use_proxy": True
     },
     {
         "platform": "Freelancer (All Data Skills)",
         "url": f"https://www.freelancer.com/rss.xml?{freelancer_skills_query}",
-        "use_browser": False
+        "use_proxy": False
     },
     {
         "platform": "Guru",
         "url": "https://www.guru.com/rss/jobs/q/data-analysis/",
-        "use_browser": False
+        "use_proxy": True
     },
     {
         "platform": "We Work Remotely (Data)",
         "url": "https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss",
-        "use_browser": False
+        "use_proxy": False
+    },
+    {
+        "platform": "PeoplePerHour",
+        "url": "https://www.peopleperhour.com/rss/freelance-data-analysis-jobs",
+        "use_proxy": True
+    },
+    {
+        "platform": "Truelancer",
+        "url": "https://www.truelancer.com/rss/data-analysis-jobs",
+        "use_proxy": True
     }
 ]
 
@@ -222,14 +235,17 @@ def send_telegram_message_to_all(platform, title, link, summary):
         send_direct_message(u_id, message)
 
 # ========================================================
-# 4. دوال جلب الوظائف المحسنة والمباشرة
+# 4. دوال جلب الوظائف المحسنة مع دعم ScraperAPI
 # ========================================================
-def fetch_feed_content(url, use_browser=False):
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-    }
+def fetch_feed_content(url, use_proxy=False):
     try:
-        res = scraper.get(url, headers=headers, timeout=12)
+        if use_proxy:
+            api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url)}"
+            res = requests.get(api_url, timeout=20)
+        else:
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            res = scraper.get(url, headers=headers, timeout=12)
+            
         if res.status_code == 200:
             return res.content
         else:
@@ -240,19 +256,15 @@ def fetch_feed_content(url, use_browser=False):
 
 def fetch_wuzzuf_jobs():
     jobs = []
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5'
-    }
     urls = [
         "https://wuzzuf.net/search/jobs/?q=data+analyst&a=hpb",
         "https://wuzzuf.net/search/jobs/?q=data+analysis&a=hpb"
     ]
     for url in urls:
         try:
-            res = scraper.get(url, headers=headers, timeout=12)
-            print(f"🔍 [Wuzzuf] Status Code: {res.status_code}", flush=True)
+            api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url)}"
+            res = requests.get(api_url, timeout=20)
+            print(f"🔍 [Wuzzuf via ScraperAPI] Status Code: {res.status_code}", flush=True)
             
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, 'html.parser')
@@ -388,17 +400,26 @@ def fetch_linkedin_jobs():
     return jobs
 
 # ========================================================
-# 5. حلقة الفحص الدوري الشاملة
+# 5. حلقة الفحص الدوري المقسمة بدقة بحسب رصيد ScraperAPI
 # ========================================================
-def check_new_jobs():
+def check_new_jobs(cycle_count):
+    # فحص منصات ScraperAPI مرة كل 80 دورة (كل 4 ساعات بالضبط = 6 مرات يومياً لعدم استهلاك الـ 1000 طلب)
+    run_proxy_platforms = (cycle_count % 80 == 1)
+    
     print(f"\n========================================================", flush=True)
-    print(f"   📊 تقرير فحص المنصات الحية - ({time.strftime('%H:%M:%S')}) - المشتركين بالسحاب: {len(users)}", flush=True)
+    print(f"   📊 تقرير فحص المنصات الحية - (الدورة: #{cycle_count}) - ({time.strftime('%H:%M:%S')})", flush=True)
+    print(f"   🎯 فحص منصات البروكسي (ScraperAPI): {'نعم ✅' if run_proxy_platforms else 'تخطي للحفاظ على الرصيد الشهري ⏳'}", flush=True)
     print(f"========================================================", flush=True)
     
     for feed_info in RSS_FEEDS:
         platform_name = feed_info["platform"]
+        use_proxy = feed_info.get("use_proxy", False)
+
+        if use_proxy and not run_proxy_platforms:
+            continue
+
         try:
-            raw_data = fetch_feed_content(feed_info["url"], use_browser=feed_info.get("use_browser", False))
+            raw_data = fetch_feed_content(feed_info["url"], use_proxy=use_proxy)
             if raw_data:
                 feed = feedparser.parse(raw_data)
                 for entry in reversed(feed.entries):
@@ -414,14 +435,18 @@ def check_new_jobs():
         except Exception as e:
             print(f"❌ [{platform_name}]: خطأ - {e}", flush=True)
 
-    custom_sources = [
-        ("Wuzzuf", fetch_wuzzuf_jobs),
+    custom_sources = []
+    
+    if run_proxy_platforms:
+        custom_sources.append(("Wuzzuf", fetch_wuzzuf_jobs))
+
+    custom_sources.extend([
         ("مستقل", fetch_mostaql_jobs),
         ("نفذلي", fetch_nafazly_jobs),
         ("خمسات", fetch_khamsat_jobs),
         ("كفيل", fetch_kafiil_jobs),
         ("LinkedIn", fetch_linkedin_jobs)
-    ]
+    ])
 
     for name, fetch_fn in custom_sources:
         try:
@@ -435,14 +460,12 @@ def check_new_jobs():
         except Exception as e:
             print(f"❌ [{name}]: خطأ - {e}", flush=True)
 
-# التهيئة الذكية لمنع التكرار عند إعادة تشغيل السيرفر
 def initialize():
     print("\nجاري بدء البوت وتسجيل الوظائف الحالية صامتاً لمنع التكرار عند التشغيل...\n", flush=True)
     
-    # 1. تخزين وظائف RSS المتاحة حالياً
     for feed_info in RSS_FEEDS:
         try:
-            raw_data = fetch_feed_content(feed_info["url"])
+            raw_data = fetch_feed_content(feed_info["url"], use_proxy=feed_info.get("use_proxy", False))
             if raw_data:
                 feed = feedparser.parse(raw_data)
                 for entry in feed.entries:
@@ -451,7 +474,6 @@ def initialize():
         except Exception:
             pass
 
-    # 2. تخزين وظائف المصادر المخصصة الحالية
     custom_sources = [
         fetch_wuzzuf_jobs, fetch_mostaql_jobs, fetch_nafazly_jobs, 
         fetch_khamsat_jobs, fetch_kafiil_jobs, fetch_linkedin_jobs
@@ -468,9 +490,13 @@ def initialize():
 
 initialize()
 
+cycle_count = 0
+
 while True:
     try:
-        check_new_jobs()
+        cycle_count += 1
+        check_new_jobs(cycle_count)
     except Exception as e:
         print(f"خطأ في الحلقة الأساسية: {e}", flush=True)
+    
     time.sleep(180)
