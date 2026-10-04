@@ -25,7 +25,7 @@ HEADERS = {
     "X-Master-Key": API_KEY
 }
 
-# إنشاء جلسة cloudscraper متقدمة
+# إنشاء جلسة cloudscraper متقدمة لتجاوز الحظر
 scraper = cloudscraper.create_scraper(
     browser={
         'browser': 'chrome',
@@ -144,7 +144,6 @@ EXCLUDED_KEYWORDS = [
 FREELANCER_SKILLS = [1042, 326, 110, 322, 2033, 1900, 44, 2182, 127, 439, 269, 889, 1282]
 freelancer_skills_query = "&".join([f"jobs[]={s}" for s in FREELANCER_SKILLS])
 
-# تنظيف القوائم وإبقاء المصادر الشغالة
 RSS_FEEDS = [
     {
         "platform": "Upwork (Data Analyst)",
@@ -223,20 +222,17 @@ def send_telegram_message_to_all(platform, title, link, summary):
         send_direct_message(u_id, message)
 
 # ========================================================
-# 4. دوال جلب الوظائف المحسنة
+# 4. دوال جلب الوظائف المحسنة والمباشرة
 # ========================================================
 def fetch_feed_content(url, use_browser=False):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    }
     try:
-        # التغيير المباشر باستخدام AllOrigins Proxy لتجاوز الـ 403 في RSS Upwork & Guru
-        proxy_url = f"https://api.allorigins.win/raw?url={requests.utils.quote(url)}"
-        res = requests.get(proxy_url, timeout=15)
+        res = scraper.get(url, headers=headers, timeout=12)
         if res.status_code == 200:
             return res.content
         else:
-            # محاولة احتياطية عبر scraper
-            res_alt = scraper.get(url, timeout=15)
-            if res_alt.status_code == 200:
-                return res_alt.content
             print(f"⚠ [RSS Feed Error] {url} returned status: {res.status_code}", flush=True)
     except Exception as e:
         print(f"❌ [RSS Feed Exception] {url}: {e}", flush=True)
@@ -244,17 +240,19 @@ def fetch_feed_content(url, use_browser=False):
 
 def fetch_wuzzuf_jobs():
     jobs = []
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5'
+    }
     urls = [
         "https://wuzzuf.net/search/jobs/?q=data+analyst&a=hpb",
-        "https://wuzzuf.net/search/jobs/?q=data+analysis&a=hpb",
-        "https://wuzzuf.net/search/jobs/?filters%5Bwork_place_type%5D%5B0%5D=remote&q=data"
+        "https://wuzzuf.net/search/jobs/?q=data+analysis&a=hpb"
     ]
     for url in urls:
         try:
-            # استخدام البروكسي المجاني لتخطي حماية Cloudflare 403 على Render
-            proxy_url = f"https://api.allorigins.win/raw?url={requests.utils.quote(url)}"
-            res = requests.get(proxy_url, timeout=15)
-            print(f"🔍 [Wuzzuf Proxy] Status Code: {res.status_code}", flush=True)
+            res = scraper.get(url, headers=headers, timeout=12)
+            print(f"🔍 [Wuzzuf] Status Code: {res.status_code}", flush=True)
             
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, 'html.parser')
@@ -275,7 +273,7 @@ def fetch_nafazly_jobs():
     jobs = []
     try:
         url = "https://nafazly.com/projects"
-        res = scraper.get(url, timeout=15)
+        res = scraper.get(url, timeout=12)
         print(f"🔍 [نفذلي] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
@@ -298,7 +296,7 @@ def fetch_mostaql_jobs():
     jobs = []
     try:
         url = "https://mostaql.com/projects"
-        res = scraper.get(url, timeout=15)
+        res = scraper.get(url, timeout=12)
         print(f"🔍 [مستقل] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
@@ -323,7 +321,7 @@ def fetch_khamsat_jobs():
     jobs = []
     try:
         url = "https://khamsat.com/community/requests"
-        res = scraper.get(url, timeout=15)
+        res = scraper.get(url, timeout=12)
         print(f"🔍 [خمسات] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
@@ -343,7 +341,7 @@ def fetch_kafiil_jobs():
     jobs = []
     try:
         url = "https://kafiil.com/projects"
-        res = scraper.get(url, timeout=15)
+        res = scraper.get(url, timeout=12)
         print(f"🔍 [كفيل] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
@@ -368,7 +366,7 @@ def fetch_linkedin_jobs():
     ]
     for url in urls:
         try:
-            response = scraper.get(url, timeout=15)
+            response = scraper.get(url, timeout=12)
             print(f"🔍 [LinkedIn] Status Code: {response.status_code}", flush=True)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
