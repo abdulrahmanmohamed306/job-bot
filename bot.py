@@ -4,6 +4,7 @@ import threading
 import time
 import feedparser
 import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 from flask import Flask, request
 
@@ -23,6 +24,15 @@ HEADERS = {
     "Content-Type": "application/json",
     "X-Master-Key": API_KEY
 }
+
+# إنشاء جلسة cloudscraper متقدمة لتجاوز حظر Cloudflare و 403
+scraper = cloudscraper.create_scraper(
+    browser={
+        'browser': 'chrome',
+        'platform': 'windows',
+        'desktop': True
+    }
+)
 
 def load_users():
     try:
@@ -223,15 +233,11 @@ def send_telegram_message_to_all(platform, title, link, summary):
         send_direct_message(u_id, message)
 
 # ========================================================
-# 4. دوال جلب الوظائف المخصصة المحدثة
+# 4. دوال جلب الوظائف المحسنة المحمية عبر Cloudscraper
 # ========================================================
 def fetch_feed_content(url, use_browser=False):
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8'
-    }
     try:
-        res = requests.get(url, headers=headers, timeout=15)
+        res = scraper.get(url, timeout=15)
         if res.status_code == 200:
             return res.content
         else:
@@ -242,10 +248,6 @@ def fetch_feed_content(url, use_browser=False):
 
 def fetch_wuzzuf_jobs():
     jobs = []
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8'
-    }
     urls = [
         "https://wuzzuf.net/search/jobs/?q=data+analyst&a=hpb",
         "https://wuzzuf.net/search/jobs/?q=data+analysis&a=hpb",
@@ -253,8 +255,8 @@ def fetch_wuzzuf_jobs():
     ]
     for url in urls:
         try:
-            res = requests.get(url, headers=headers, timeout=15)
-            print(f"🔍 [Wuzzuf] Status Code: {res.status_code}", flush=True)
+            res = scraper.get(url, timeout=15)
+            print(f"🔍 [Wuzzuf Cloudscraper] Status Code: {res.status_code}", flush=True)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, 'html.parser')
                 job_cards = soup.select('div[class*="css-"]') or soup.find_all('article')
@@ -274,11 +276,7 @@ def fetch_nafazly_jobs():
     jobs = []
     try:
         url = "https://nafazly.com/projects"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8'
-        }
-        res = requests.get(url, headers=headers, timeout=15)
+        res = scraper.get(url, timeout=15)
         print(f"🔍 [نفذلي] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
@@ -301,11 +299,7 @@ def fetch_mostaql_jobs():
     jobs = []
     try:
         url = "https://mostaql.com/projects"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8'
-        }
-        res = requests.get(url, headers=headers, timeout=15)
+        res = scraper.get(url, timeout=15)
         print(f"🔍 [مستقل] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
@@ -330,11 +324,7 @@ def fetch_khamsat_jobs():
     jobs = []
     try:
         url = "https://khamsat.com/community/requests"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8'
-        }
-        res = requests.get(url, headers=headers, timeout=15)
+        res = scraper.get(url, timeout=15)
         print(f"🔍 [خمسات] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
@@ -354,8 +344,7 @@ def fetch_kafiil_jobs():
     jobs = []
     try:
         url = "https://kafiil.com/projects"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        res = requests.get(url, headers=headers, timeout=15)
+        res = scraper.get(url, timeout=15)
         print(f"🔍 [كفيل] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
@@ -374,14 +363,13 @@ def fetch_kafiil_jobs():
 
 def fetch_linkedin_jobs():
     jobs = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     urls = [
         "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=Data%20Analyst&location=Egypt&f_TPR=r86400&start=0",
         "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=Data%20Analyst&f_WT=2&f_TPR=r86400&start=0"
     ]
     for url in urls:
         try:
-            response = requests.get(url, headers=headers, timeout=15)
+            response = scraper.get(url, timeout=15)
             print(f"🔍 [LinkedIn] Status Code: {response.status_code}", flush=True)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
@@ -452,7 +440,6 @@ def check_new_jobs():
 
 def initialize():
     print("\nجاري بدء البوت وتجهيز الفحص الحي بدون إغلاق الوظائف المتاحة...\n", flush=True)
-    # تم إلغاء حظر الروابط المبدئية عند التشغيل لضمان استلام الفرص المنشورة حديثاً فوراً
     print("\nاكتملت التهيئة! البوت جاهز لرصد المتاح وتمريره فوراً...\n", flush=True)
 
 initialize()
