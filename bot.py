@@ -77,7 +77,7 @@ def telegram_webhook():
                 save_users(users)
                 welcome_msg = (
                     "أهلاً بك! 🎉 تم تفعيل اشتراكك بنجاح.\n\n"
-                    "🤖 **يقوم هذا البوت برصد وجلب أحدث فرص وتحليلات البيانات (Data Analysis) فور نشرها من المنصات الـ 11 التالية:**\n"
+                    "🤖 **يقوم هذا البوت برصد وجلب أحدث فرص وتحليلات البيانات (Data Analysis) فور نشرها من المنصات التالية:**\n"
                     "• 🟢 **Upwork**\n"
                     "• 🟢 **LinkedIn** (مصر و Remote)\n"
                     "• 🟢 **Wuzzuf** (وظف - مصر و Remote)\n"
@@ -87,7 +87,6 @@ def telegram_webhook():
                     "• 🟢 **خمسات (Khamsat)**\n"
                     "• 🟢 **كفيل (Kafiil)**\n"
                     "• 🟢 **PeoplePerHour**\n"
-                    "• 🟢 **Truelancer**\n"
                     "• 🟢 **We Work Remotely & Guru**\n\n"
                     "⚡️ ستصلك الإشعارات فور توفر أي فرصة جديدة!"
                 )
@@ -147,10 +146,11 @@ EXCLUDED_KEYWORDS = [
 FREELANCER_SKILLS = [1042, 326, 110, 322, 2033, 1900, 44, 2182, 127, 439, 269, 889, 1282]
 freelancer_skills_query = "&".join([f"jobs[]={s}" for s in FREELANCER_SKILLS])
 
+# القائمة المنقاة بعناية للوظائف
 RSS_FEEDS = [
     {
         "platform": "Upwork (Data Analyst)",
-        "url": "https://www.upwork.com/ab/feed/jobs/rss?q=data+analyst&sort=recency",
+        "url": "https://www.upwork.com/ab/feed/jobs/rss?q=data%20analyst&sort=recency",
         "use_proxy": True
     },
     {
@@ -171,11 +171,6 @@ RSS_FEEDS = [
     {
         "platform": "PeoplePerHour",
         "url": "https://www.peopleperhour.com/rss/freelance-data-analysis-jobs",
-        "use_proxy": True
-    },
-    {
-        "platform": "Truelancer",
-        "url": "https://www.truelancer.com/rss/data-analysis-jobs",
         "use_proxy": True
     }
 ]
@@ -241,7 +236,7 @@ def fetch_feed_content(url, use_proxy=False):
     try:
         if use_proxy:
             api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url)}"
-            res = requests.get(api_url, timeout=20)
+            res = requests.get(api_url, timeout=25)
         else:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
             res = scraper.get(url, headers=headers, timeout=12)
@@ -263,7 +258,7 @@ def fetch_wuzzuf_jobs():
     for url in urls:
         try:
             api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url)}"
-            res = requests.get(api_url, timeout=20)
+            res = requests.get(api_url, timeout=25)
             print(f"🔍 [Wuzzuf via ScraperAPI] Status Code: {res.status_code}", flush=True)
             
             if res.status_code == 200:
@@ -403,7 +398,7 @@ def fetch_linkedin_jobs():
 # 5. حلقة الفحص الدوري المقسمة بدقة بحسب رصيد ScraperAPI
 # ========================================================
 def check_new_jobs(cycle_count):
-    # فحص منصات ScraperAPI مرة كل 80 دورة (كل 4 ساعات بالضبط = 6 مرات يومياً لعدم استهلاك الـ 1000 طلب)
+    # فحص منصات ScraperAPI مرة كل 80 دورة (كل 4 ساعات)
     run_proxy_platforms = (cycle_count % 80 == 1)
     
     print(f"\n========================================================", flush=True)
