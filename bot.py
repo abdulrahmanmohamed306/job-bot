@@ -31,9 +31,9 @@ def load_users():
             data = res.json().get("record", [])
             return set(str(uid) for uid in data)
         else:
-            print(f"تنبيه JSONBin: استجابة برقم {res.status_code}")
+            print(f"تنبيه JSONBin: استجابة برقم {res.status_code}", flush=True)
     except Exception as e:
-        print(f"خطأ في قراءة قاعدة البيانات السحابية: {e}")
+        print(f"خطأ في قراءة قاعدة البيانات السحابية: {e}", flush=True)
     return {ADMIN_CHAT_ID}
 
 def save_users(users_set):
@@ -41,9 +41,9 @@ def save_users(users_set):
         payload = list(users_set)
         res = requests.put(JSONBIN_URL, json=payload, headers=HEADERS, timeout=10)
         if res.status_code == 200:
-            print(f"✅ تم تحديث قائمة المستخدمين بالسحاب ({len(payload)} مستخدم)")
+            print(f"✅ تم تحديث قائمة المستخدمين بالسحاب ({len(payload)} مستخدم)", flush=True)
     except Exception as e:
-        print(f"خطأ في حفظ المستخدمين في السحاب: {e}")
+        print(f"خطأ في حفظ المستخدمين في السحاب: {e}", flush=True)
 
 users = load_users()
 
@@ -103,9 +103,9 @@ def set_webhook_auto():
     webhook_url = f"https://job-bot-bfhd.onrender.com/{TELEGRAM_TOKEN}"
     try:
         res = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook?url={webhook_url}")
-        print(f"✅ نتيجة ربط الـ Webhook: {res.json()}")
+        print(f"✅ نتيجة ربط الـ Webhook: {res.json()}", flush=True)
     except Exception as e:
-        print(f"خطأ في إعداد Webhook: {e}")
+        print(f"خطأ في إعداد Webhook: {e}", flush=True)
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -206,7 +206,7 @@ def send_direct_message(chat_id, text):
     try:
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        print(f"خطأ إرسال فردي لـ {chat_id}: {e}")
+        print(f"خطأ إرسال فردي لـ {chat_id}: {e}", flush=True)
 
 def send_telegram_message_to_all(platform, title, link, summary):
     message = (
@@ -217,32 +217,71 @@ def send_telegram_message_to_all(platform, title, link, summary):
     )
     
     current_users = list(users)
-    print(f"[{platform}] جاري إرسال الفرصة لـ {len(current_users)} مشترك: {title}")
+    print(f"[{platform}] جاري إرسال الفرصة لـ {len(current_users)} مشترك: {title}", flush=True)
     
     for u_id in current_users:
         send_direct_message(u_id, message)
 
 # ========================================================
-# 4. دوال جلب الوظائف المخصصة
+# 4. دوال جلب الوظائف المخصصة المحدثة
 # ========================================================
 def fetch_feed_content(url, use_browser=False):
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8'
+    }
     try:
         res = requests.get(url, headers=headers, timeout=15)
-        return res.content if res.status_code == 200 else None
-    except Exception:
-        return None
+        if res.status_code == 200:
+            return res.content
+        else:
+            print(f"⚠ [RSS Feed Error] {url} returned status: {res.status_code}", flush=True)
+    except Exception as e:
+        print(f"❌ [RSS Feed Exception] {url}: {e}", flush=True)
+    return None
+
+def fetch_wuzzuf_jobs():
+    jobs = []
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8'
+    }
+    urls = [
+        "https://wuzzuf.net/search/jobs/?q=data+analyst&a=hpb",
+        "https://wuzzuf.net/search/jobs/?q=data+analysis&a=hpb",
+        "https://wuzzuf.net/search/jobs/?filters%5Bwork_place_type%5D%5B0%5D=remote&q=data"
+    ]
+    for url in urls:
+        try:
+            res = requests.get(url, headers=headers, timeout=15)
+            print(f"🔍 [Wuzzuf] Status Code: {res.status_code}", flush=True)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.text, 'html.parser')
+                job_cards = soup.select('div[class*="css-"]') or soup.find_all('article')
+                for card in job_cards:
+                    a_tag = card.find('a', href=True)
+                    if a_tag and '/jobs/p/' in a_tag['href']:
+                        title = a_tag.text.strip()
+                        link = a_tag['href']
+                        if not link.startswith('http'):
+                            link = f"https://wuzzuf.net{link}"
+                        jobs.append({"title": title, "link": link, "summary": "وظيفة تحليل بيانات على منصة Wuzzuf", "category": "Wuzzuf"})
+        except Exception as e:
+            print(f"❌ [Wuzzuf Error]: {e}", flush=True)
+    return jobs
 
 def fetch_nafazly_jobs():
-    """ جلب أحدث المشاريع من منصة نفذلي (Nafazly) """
     jobs = []
     try:
         url = "https://nafazly.com/projects"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8'
+        }
         res = requests.get(url, headers=headers, timeout=15)
+        print(f"🔍 [نفذلي] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
-            # البحث عن عناصر المشاريع في نفذلي
             cards = soup.find_all('div', class_='project-card') or soup.select('.project-item, div[class*="project"]')
             for card in cards:
                 a_tag = card.find('a', href=True)
@@ -254,46 +293,20 @@ def fetch_nafazly_jobs():
                     desc_elem = card.find('p') or card.find('div', class_='description')
                     summary = desc_elem.text.strip() if desc_elem else "مشروع جديد على منصة نفذلي"
                     jobs.append({"title": title, "link": link, "summary": summary, "category": "نفذلي"})
-    except Exception:
-        pass
-    return jobs
-
-def fetch_wuzzuf_jobs():
-    jobs = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    urls = [
-        "https://wuzzuf.net/search/jobs/?q=data+analyst&a=hpb",
-        "https://wuzzuf.net/search/jobs/?filters%5Bwork_place_type%5D%5B0%5D=remote&q=data+analyst"
-    ]
-    for url in urls:
-        try:
-            res = requests.get(url, headers=headers, timeout=15)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.text, 'html.parser')
-                cards = soup.find_all('div', class_='css-1g2322n') or soup.find_all('div', class_='css-p2f64j')
-                for card in cards:
-                    title_elem = card.find('a', class_='css-o171kl') or card.find('h2')
-                    if title_elem:
-                        a_tag = title_elem.find('a') if title_elem.name != 'a' else title_elem
-                        if a_tag and 'href' in a_tag.attrs:
-                            title = a_tag.text.strip()
-                            link = a_tag['href']
-                            if not link.startswith('http'):
-                                link = f"https://wuzzuf.net{link}"
-                            company_elem = card.find('a', class_='css-17s97q8')
-                            company = company_elem.text.strip() if company_elem else "Wuzzuf Employer"
-                            summary = f"شركة: {company} | وظيفة تحليل بيانات عبر Wuzzuf (مصر/Remote)."
-                            jobs.append({"title": title, "link": link, "summary": summary, "category": "Wuzzuf"})
-        except Exception:
-            pass
+    except Exception as e:
+        print(f"❌ [نفذلي Error]: {e}", flush=True)
     return jobs
 
 def fetch_mostaql_jobs():
     jobs = []
     try:
         url = "https://mostaql.com/projects"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8'
+        }
         res = requests.get(url, headers=headers, timeout=15)
+        print(f"🔍 [مستقل] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
             rows = soup.find_all('tr', class_='project-row') or soup.find_all('div', class_='project-card')
@@ -309,29 +322,32 @@ def fetch_mostaql_jobs():
                     desc_tag = row.find('p') or row.find('td', class_='project-brief')
                     summary = desc_tag.text.strip() if desc_tag else title
                     jobs.append({"title": title, "link": link, "summary": summary, "category": "مستقل"})
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"❌ [مستقل Error]: {e}", flush=True)
     return jobs
 
 def fetch_khamsat_jobs():
     jobs = []
     try:
         url = "https://khamsat.com/community/requests"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8'
+        }
         res = requests.get(url, headers=headers, timeout=15)
+        print(f"🔍 [خمسات] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
-            rows = soup.find_all('tr', class_='forum_post') or soup.find_all('td', class_='thread_title')
-            for row in rows:
-                a_tag = row.find('a', href=True)
-                if a_tag and '/community/requests/' in a_tag['href']:
-                    title = a_tag.text.strip()
-                    link = a_tag['href']
+            links = soup.select('a[href*="/community/requests/"]')
+            for a_tag in links:
+                title = a_tag.text.strip()
+                link = a_tag['href']
+                if title and len(title) > 5:
                     if not link.startswith('http'):
                         link = f"https://khamsat.com{link}"
-                    jobs.append({"title": title, "link": link, "summary": "طلب خدمة جديد على منصة خمسات", "category": "خمسات"})
-    except Exception:
-        pass
+                    jobs.append({"title": title, "link": link, "summary": "طلب خدمة جديد في مجتمع خمسات", "category": "خمسات"})
+    except Exception as e:
+        print(f"❌ [خمسات Error]: {e}", flush=True)
     return jobs
 
 def fetch_kafiil_jobs():
@@ -340,6 +356,7 @@ def fetch_kafiil_jobs():
         url = "https://kafiil.com/projects"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         res = requests.get(url, headers=headers, timeout=15)
+        print(f"🔍 [كفيل] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
             cards = soup.find_all('div', class_='project-item') or soup.find_all('a', class_='title')
@@ -351,8 +368,8 @@ def fetch_kafiil_jobs():
                     if not link.startswith('http'):
                         link = f"https://kafiil.com{link}"
                     jobs.append({"title": title, "link": link, "summary": "مشروع جديد على منصة كفيل", "category": "كفيل"})
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"❌ [كفيل Error]: {e}", flush=True)
     return jobs
 
 def fetch_linkedin_jobs():
@@ -365,6 +382,7 @@ def fetch_linkedin_jobs():
     for url in urls:
         try:
             response = requests.get(url, headers=headers, timeout=15)
+            print(f"🔍 [LinkedIn] Status Code: {response.status_code}", flush=True)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 posts = soup.find_all('li')
@@ -380,17 +398,17 @@ def fetch_linkedin_jobs():
                         location = location_elem.text.strip() if location_elem else "مصر/عن بُعد"
                         summary = f"شركة: {company} | المكان: {location} | فرصة تحليل بيانات من LinkedIn."
                         jobs.append({"title": title, "link": link, "summary": summary, "category": "Data Analytics"})
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"❌ [LinkedIn Error]: {e}", flush=True)
     return jobs
 
 # ========================================================
 # 5. حلقة الفحص الدوري الشاملة
 # ========================================================
 def check_new_jobs():
-    print(f"\n========================================================")
-    print(f"   📊 تقرير فحص المنصات الحية - ({time.strftime('%H:%M:%S')}) - المشتركين بالسحاب: {len(users)}")
-    print(f"========================================================")
+    print(f"\n========================================================", flush=True)
+    print(f"   📊 تقرير فحص المنصات الحية - ({time.strftime('%H:%M:%S')}) - المشتركين بالسحاب: {len(users)}", flush=True)
+    print(f"========================================================", flush=True)
     
     for feed_info in RSS_FEEDS:
         platform_name = feed_info["platform"]
@@ -409,7 +427,7 @@ def check_new_jobs():
                         if is_relevant_job(title, summary_clean, categories_text):
                             send_telegram_message_to_all(platform_name, title, entry.link, summary_clean)
         except Exception as e:
-            print(f"❌ [{platform_name}]: خطأ - {e}")
+            print(f"❌ [{platform_name}]: خطأ - {e}", flush=True)
 
     custom_sources = [
         ("Wuzzuf", fetch_wuzzuf_jobs),
@@ -430,27 +448,12 @@ def check_new_jobs():
                     if is_relevant_job(job["title"], job["summary"], job.get("category", "")):
                         send_telegram_message_to_all(name, job["title"], job["link"], job["summary"])
         except Exception as e:
-            print(f"❌ [{name}]: خطأ - {e}")
+            print(f"❌ [{name}]: خطأ - {e}", flush=True)
 
 def initialize():
-    print("\nجاري التهيئة وتخزين الوظائف السابقة لتجنب التكرار...\n")
-    for feed_info in RSS_FEEDS:
-        try:
-            raw_data = fetch_feed_content(feed_info["url"], use_browser=feed_info.get("use_browser", False))
-            if raw_data:
-                feed = feedparser.parse(raw_data)
-                for entry in feed.entries:
-                    sent_jobs.add(entry.link)
-        except Exception:
-            pass
-
-    for _, fetch_fn in [("Wuzzuf", fetch_wuzzuf_jobs), ("مستقل", fetch_mostaql_jobs), ("نفذلي", fetch_nafazly_jobs), ("خمسات", fetch_khamsat_jobs), ("كفيل", fetch_kafiil_jobs), ("LinkedIn", fetch_linkedin_jobs)]:
-        try:
-            for job in fetch_fn():
-                if job.get("link"): sent_jobs.add(job["link"])
-        except Exception: pass
-
-    print("\nاكتملت التهيئة بنجاح! البوت جاهز ومربوط بقاعدة البيانات السحابية...\n")
+    print("\nجاري بدء البوت وتجهيز الفحص الحي بدون إغلاق الوظائف المتاحة...\n", flush=True)
+    # تم إلغاء حظر الروابط المبدئية عند التشغيل لضمان استلام الفرص المنشورة حديثاً فوراً
+    print("\nاكتملت التهيئة! البوت جاهز لرصد المتاح وتمريره فوراً...\n", flush=True)
 
 initialize()
 
@@ -458,5 +461,5 @@ while True:
     try:
         check_new_jobs()
     except Exception as e:
-        print(f"خطأ في الحلقة الأساسية: {e}")
+        print(f"خطأ في الحلقة الأساسية: {e}", flush=True)
     time.sleep(180)
