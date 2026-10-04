@@ -25,7 +25,7 @@ HEADERS = {
     "X-Master-Key": API_KEY
 }
 
-# إنشاء جلسة cloudscraper متقدمة لتجاوز حظر Cloudflare و 403
+# إنشاء جلسة cloudscraper متقدمة
 scraper = cloudscraper.create_scraper(
     browser={
         'browser': 'chrome',
@@ -84,9 +84,8 @@ def telegram_webhook():
                     "• 🟢 **نفذلي (Nafazly)**\n"
                     "• 🟢 **خمسات (Khamsat)**\n"
                     "• 🟢 **كفيل (Kafiil)**\n"
-                    "• 🟢 **PeoplePerHour**\n"
                     "• 🟢 **We Work Remotely**\n"
-                    "• 🟢 **Guru & Truelancer**\n\n"
+                    "• 🟢 **Guru**\n\n"
                     "⚡️ ستصلك الإشعارات فور توفر أي فرصة جديدة!"
                 )
                 send_direct_message(chat_id, welcome_msg)
@@ -145,6 +144,7 @@ EXCLUDED_KEYWORDS = [
 FREELANCER_SKILLS = [1042, 326, 110, 322, 2033, 1900, 44, 2182, 127, 439, 269, 889, 1282]
 freelancer_skills_query = "&".join([f"jobs[]={s}" for s in FREELANCER_SKILLS])
 
+# تنظيف القوائم وإبقاء المصادر الشغالة
 RSS_FEEDS = [
     {
         "platform": "Upwork (Data Analyst)",
@@ -164,16 +164,6 @@ RSS_FEEDS = [
     {
         "platform": "We Work Remotely (Data)",
         "url": "https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss",
-        "use_browser": False
-    },
-    {
-        "platform": "PeoplePerHour",
-        "url": "https://www.peopleperhour.com/rss/freelance-data-analysis-jobs",
-        "use_browser": False
-    },
-    {
-        "platform": "Truelancer",
-        "url": "https://www.truelancer.com/rss/data-analysis-jobs",
         "use_browser": False
     }
 ]
@@ -233,14 +223,20 @@ def send_telegram_message_to_all(platform, title, link, summary):
         send_direct_message(u_id, message)
 
 # ========================================================
-# 4. دوال جلب الوظائف المحسنة المحمية عبر Cloudscraper
+# 4. دوال جلب الوظائف المحسنة
 # ========================================================
 def fetch_feed_content(url, use_browser=False):
     try:
-        res = scraper.get(url, timeout=15)
+        # التغيير المباشر باستخدام AllOrigins Proxy لتجاوز الـ 403 في RSS Upwork & Guru
+        proxy_url = f"https://api.allorigins.win/raw?url={requests.utils.quote(url)}"
+        res = requests.get(proxy_url, timeout=15)
         if res.status_code == 200:
             return res.content
         else:
+            # محاولة احتياطية عبر scraper
+            res_alt = scraper.get(url, timeout=15)
+            if res_alt.status_code == 200:
+                return res_alt.content
             print(f"⚠ [RSS Feed Error] {url} returned status: {res.status_code}", flush=True)
     except Exception as e:
         print(f"❌ [RSS Feed Exception] {url}: {e}", flush=True)
@@ -255,8 +251,11 @@ def fetch_wuzzuf_jobs():
     ]
     for url in urls:
         try:
-            res = scraper.get(url, timeout=15)
-            print(f"🔍 [Wuzzuf Cloudscraper] Status Code: {res.status_code}", flush=True)
+            # استخدام البروكسي المجاني لتخطي حماية Cloudflare 403 على Render
+            proxy_url = f"https://api.allorigins.win/raw?url={requests.utils.quote(url)}"
+            res = requests.get(proxy_url, timeout=15)
+            print(f"🔍 [Wuzzuf Proxy] Status Code: {res.status_code}", flush=True)
+            
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, 'html.parser')
                 job_cards = soup.select('div[class*="css-"]') or soup.find_all('article')
@@ -438,9 +437,36 @@ def check_new_jobs():
         except Exception as e:
             print(f"❌ [{name}]: خطأ - {e}", flush=True)
 
+# التهيئة الذكية لمنع التكرار عند إعادة تشغيل السيرفر
 def initialize():
-    print("\nجاري بدء البوت وتجهيز الفحص الحي بدون إغلاق الوظائف المتاحة...\n", flush=True)
-    print("\nاكتملت التهيئة! البوت جاهز لرصد المتاح وتمريره فوراً...\n", flush=True)
+    print("\nجاري بدء البوت وتسجيل الوظائف الحالية صامتاً لمنع التكرار عند التشغيل...\n", flush=True)
+    
+    # 1. تخزين وظائف RSS المتاحة حالياً
+    for feed_info in RSS_FEEDS:
+        try:
+            raw_data = fetch_feed_content(feed_info["url"])
+            if raw_data:
+                feed = feedparser.parse(raw_data)
+                for entry in feed.entries:
+                    if hasattr(entry, 'link'):
+                        sent_jobs.add(entry.link)
+        except Exception:
+            pass
+
+    # 2. تخزين وظائف المصادر المخصصة الحالية
+    custom_sources = [
+        fetch_wuzzuf_jobs, fetch_mostaql_jobs, fetch_nafazly_jobs, 
+        fetch_khamsat_jobs, fetch_kafiil_jobs, fetch_linkedin_jobs
+    ]
+    for fetch_fn in custom_sources:
+        try:
+            for job in fetch_fn():
+                if job.get("link"):
+                    sent_jobs.add(job["link"])
+        except Exception:
+            pass
+
+    print(f"\nاكتملت التهيئة بنجاح! تم حظر {len(sent_jobs)} رابط سابق. البوت يرصد الفرص الجديدة فقط...\n", flush=True)
 
 initialize()
 
