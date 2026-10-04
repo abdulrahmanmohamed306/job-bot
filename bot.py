@@ -19,8 +19,11 @@ ADMIN_CHAT_ID = "595651385"
 BIN_ID = "6abbabb6ffd5d160533b52b6"
 API_KEY = "$2a$10$EajWbmH5WUuF5mKv4WDsnOR9T8wJeueARqCiGkaTycmGoaFAx05w6"
 
-# 🔑 مفتاح ScraperAPI الخاص بك
-SCRAPER_API_KEY = "f98dad3c712a79bf94eacfd5884d699d"
+# 🔑 المفتاح الأول (لـ Wuzzuf & Upwork)
+SCRAPER_API_KEY_1 = "f98dad3c712a79bf94eacfd5884d699d"
+
+# 🔑 المفتاح الثاني الجديد (لـ Guru & PeoplePerHour)
+SCRAPER_API_KEY_2 = "bc0f01481b65264eaa5cbee9376b009a"
 
 JSONBIN_URL = f"https://api.jsonbin.io/v3/b/{BIN_ID}"
 HEADERS = {
@@ -155,7 +158,8 @@ RSS_FEEDS = [
     {
         "platform": "Guru",
         "url": "https://www.guru.com/rss/jobs/q/data-analysis/",
-        "use_proxy": True
+        "use_proxy": True,
+        "key_type": 2  # يستخدم المفتاح الثاني
     },
     {
         "platform": "We Work Remotely (Data)",
@@ -219,12 +223,13 @@ def send_telegram_message_to_all(platform, title, link, summary):
         send_direct_message(u_id, message)
 
 # ========================================================
-# 4. دوال جلب الوظائف المحسنة والكشط المباشر
+# 4. دوال جلب الوظائف مقسمة على المفتاحين
 # ========================================================
-def fetch_feed_content(url, use_proxy=False):
+def fetch_feed_content(url, use_proxy=False, key_type=1):
     try:
         if use_proxy:
-            api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url)}"
+            key_to_use = SCRAPER_API_KEY_1 if key_type == 1 else SCRAPER_API_KEY_2
+            api_url = f"http://api.scraperapi.com?api_key={key_to_use}&url={requests.utils.quote(url)}"
             res = requests.get(api_url, timeout=30)
         else:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
@@ -246,9 +251,10 @@ def fetch_wuzzuf_jobs():
     ]
     for url in urls:
         try:
-            api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url)}"
+            # يستعمل المفتاح الأول
+            api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY_1}&url={requests.utils.quote(url)}"
             res = requests.get(api_url, timeout=30)
-            print(f"🔍 [Wuzzuf via ScraperAPI] Status Code: {res.status_code}", flush=True)
+            print(f"🔍 [Wuzzuf via ScraperAPI #1] Status Code: {res.status_code}", flush=True)
             
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, 'html.parser')
@@ -265,37 +271,14 @@ def fetch_wuzzuf_jobs():
             print(f"❌ [Wuzzuf Error]: {e}", flush=True)
     return jobs
 
-def fetch_peopleperhour_jobs():
-    jobs = []
-    url = "https://www.peopleperhour.com/freelance-data-analysis-jobs"
-    try:
-        api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url)}"
-        res = requests.get(api_url, timeout=30)
-        print(f"🔍 [PeoplePerHour via ScraperAPI] Status Code: {res.status_code}", flush=True)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, 'html.parser')
-            cards = soup.select('article, div[class*="job-card"]') or soup.find_all('div', class_=lambda c: c and 'item' in c)
-            for card in cards:
-                a_tag = card.find('a', href=True)
-                if a_tag and '/freelance-jobs/' in a_tag['href']:
-                    title = a_tag.text.strip()
-                    link = a_tag['href']
-                    if not link.startswith('http'):
-                        link = f"https://www.peopleperhour.com{link}"
-                    desc_tag = card.find('p') or card.find('div', class_=lambda c: c and 'description' in c)
-                    summary = desc_tag.text.strip() if desc_tag else "فرصة جديدة على منصة PeoplePerHour"
-                    jobs.append({"title": title, "link": link, "summary": summary, "category": "PeoplePerHour"})
-    except Exception as e:
-        print(f"❌ [PeoplePerHour Error]: {e}", flush=True)
-    return jobs
-
 def fetch_upwork_jobs():
     jobs = []
     url = "https://www.upwork.com/nx/search/jobs/?q=data%20analysis&sort=recency"
     try:
-        api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url)}"
+        # يستعمل المفتاح الأول
+        api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY_1}&url={requests.utils.quote(url)}"
         res = requests.get(api_url, timeout=30)
-        print(f"🔍 [Upwork via ScraperAPI] Status Code: {res.status_code}", flush=True)
+        print(f"🔍 [Upwork via ScraperAPI #1] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
             articles = soup.find_all('article') or soup.select('section[data-test="JobTile"]')
@@ -311,6 +294,31 @@ def fetch_upwork_jobs():
                     jobs.append({"title": title, "link": link, "summary": summary, "category": "Upwork"})
     except Exception as e:
         print(f"❌ [Upwork Error]: {e}", flush=True)
+    return jobs
+
+def fetch_peopleperhour_jobs():
+    jobs = []
+    url = "https://www.peopleperhour.com/freelance-data-analysis-jobs"
+    try:
+        # يستعمل المفتاح الثاني الجديد
+        api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY_2}&url={requests.utils.quote(url)}"
+        res = requests.get(api_url, timeout=30)
+        print(f"🔍 [PeoplePerHour via ScraperAPI #2] Status Code: {res.status_code}", flush=True)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            cards = soup.select('article, div[class*="job-card"]') or soup.find_all('div', class_=lambda c: c and 'item' in c)
+            for card in cards:
+                a_tag = card.find('a', href=True)
+                if a_tag and '/freelance-jobs/' in a_tag['href']:
+                    title = a_tag.text.strip()
+                    link = a_tag['href']
+                    if not link.startswith('http'):
+                        link = f"https://www.peopleperhour.com{link}"
+                    desc_tag = card.find('p') or card.find('div', class_=lambda c: c and 'description' in c)
+                    summary = desc_tag.text.strip() if desc_tag else "فرصة جديدة على منصة PeoplePerHour"
+                    jobs.append({"title": title, "link": link, "summary": summary, "category": "PeoplePerHour"})
+    except Exception as e:
+        print(f"❌ [PeoplePerHour Error]: {e}", flush=True)
     return jobs
 
 def fetch_nafazly_jobs():
@@ -432,26 +440,27 @@ def fetch_linkedin_jobs():
     return jobs
 
 # ========================================================
-# 5. حلقة الفحص الدوري المقسمة بدقة بحسب رصيد ScraperAPI
+# 5. حلقة الفحص الدوري (كل ساعتين للمنصات المحجوبة)
 # ========================================================
 def check_new_jobs(cycle_count):
-    # فحص منصات ScraperAPI مرة كل 80 دورة (كل 4 ساعات)
-    run_proxy_platforms = (cycle_count % 80 == 1)
+    # تفحص منصات البروكسي الآن كل 40 دورة (كل 120 دقيقة = ساعتين بالضبط)
+    run_proxy_platforms = (cycle_count % 40 == 1)
     
     print(f"\n========================================================", flush=True)
     print(f"   📊 تقرير فحص المنصات الحية - (الدورة: #{cycle_count}) - ({time.strftime('%H:%M:%S')})", flush=True)
-    print(f"   🎯 فحص منصات البروكسي (ScraperAPI): {'نعم ✅' if run_proxy_platforms else 'تخطي للحفاظ على الرصيد الشهري ⏳'}", flush=True)
+    print(f"   🎯 فحص منصات البروكسي (ScraperAPI): {'نعم (موزع على مفتاحين) ✅' if run_proxy_platforms else 'تخطي للحفاظ على الرصيد ⏳'}", flush=True)
     print(f"========================================================", flush=True)
     
     for feed_info in RSS_FEEDS:
         platform_name = feed_info["platform"]
         use_proxy = feed_info.get("use_proxy", False)
+        key_type = feed_info.get("key_type", 1)
 
         if use_proxy and not run_proxy_platforms:
             continue
 
         try:
-            raw_data = fetch_feed_content(feed_info["url"], use_proxy=use_proxy)
+            raw_data = fetch_feed_content(feed_info["url"], use_proxy=use_proxy, key_type=key_type)
             if raw_data:
                 feed = feedparser.parse(raw_data)
                 for entry in reversed(feed.entries):
@@ -471,8 +480,8 @@ def check_new_jobs(cycle_count):
     
     if run_proxy_platforms:
         custom_sources.append(("Wuzzuf", fetch_wuzzuf_jobs))
-        custom_sources.append(("PeoplePerHour", fetch_peopleperhour_jobs))
         custom_sources.append(("Upwork", fetch_upwork_jobs))
+        custom_sources.append(("PeoplePerHour", fetch_peopleperhour_jobs))
 
     custom_sources.extend([
         ("مستقل", fetch_mostaql_jobs),
@@ -499,7 +508,7 @@ def initialize():
     
     for feed_info in RSS_FEEDS:
         try:
-            raw_data = fetch_feed_content(feed_info["url"], use_proxy=feed_info.get("use_proxy", False))
+            raw_data = fetch_feed_content(feed_info["url"], use_proxy=feed_info.get("use_proxy", False), key_type=feed_info.get("key_type", 1))
             if raw_data:
                 feed = feedparser.parse(raw_data)
                 for entry in feed.entries:
