@@ -22,7 +22,7 @@ API_KEY = "$2a$10$EajWbmH5WUuF5mKv4WDsnOR9T8wJeueARqCiGkaTycmGoaFAx05w6"
 # 🔑 المفتاح الأول (لـ Wuzzuf & Upwork)
 SCRAPER_API_KEY_1 = "f98dad3c712a79bf94eacfd5884d699d"
 
-# 🔑 المفتاح الثاني الجديد (لـ Guru & PeoplePerHour)
+# 🔑 المفتاح الثاني (لـ Guru, PeoplePerHour & نفذلي)
 SCRAPER_API_KEY_2 = "bc0f01481b65264eaa5cbee9376b009a"
 
 JSONBIN_URL = f"https://api.jsonbin.io/v3/b/{BIN_ID}"
@@ -223,7 +223,7 @@ def send_telegram_message_to_all(platform, title, link, summary):
         send_direct_message(u_id, message)
 
 # ========================================================
-# 4. دوال جلب الوظائف (مضاف إليها أسطر الطباعة التشخيصية)
+# 4. دوال جلب الوظائف (نفذلي تُسحب الآن عبر Key #2)
 # ========================================================
 def fetch_feed_content(url, use_proxy=False, key_type=1):
     try:
@@ -318,13 +318,14 @@ def fetch_peopleperhour_jobs():
         print(f"❌ [PeoplePerHour Error]: {e}", flush=True)
     return jobs
 
-# 💡 دالة نفذلي مع سطر طباعة عدد المشاريع المجلوبة
+# 💡 دالة نفذلي المحدثة عبر ScraperAPI (Key #2) لتجاوز خطأ 403
 def fetch_nafazly_jobs():
     jobs = []
     try:
         url = "https://nafezly.com/projects"
-        res = scraper.get(url, timeout=12)
-        print(f"🔍 [نفذلي] Status Code: {res.status_code}", flush=True)
+        api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY_2}&url={requests.utils.quote(url)}"
+        res = requests.get(api_url, timeout=30)
+        print(f"🔍 [نفذلي via ScraperAPI #2] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
             a_tags = soup.find_all('a', href=True)
@@ -345,7 +346,6 @@ def fetch_nafazly_jobs():
         print(f"❌ [نفذلي Error]: {e}", flush=True)
     return jobs
 
-# 💡 دالة كفيل مع سطر طباعة عدد المشاريع المجلوبة
 def fetch_kafiil_jobs():
     jobs = []
     try:
@@ -447,7 +447,7 @@ def fetch_linkedin_jobs():
     return jobs
 
 # ========================================================
-# 5. حلقة الفحص الدوري
+# 5. حلقة الفحص الدوري (نفذلي تُفحص الآن كل ساعتين ضمن البروكسي)
 # ========================================================
 def check_new_jobs(cycle_count):
     run_proxy_platforms = (cycle_count % 40 == 1)
@@ -488,10 +488,10 @@ def check_new_jobs(cycle_count):
         custom_sources.append(("Wuzzuf", fetch_wuzzuf_jobs))
         custom_sources.append(("Upwork", fetch_upwork_jobs))
         custom_sources.append(("PeoplePerHour", fetch_peopleperhour_jobs))
+        custom_sources.append(("نفذلي", fetch_nafazly_jobs))
 
     custom_sources.extend([
         ("مستقل", fetch_mostaql_jobs),
-        ("نفذلي", fetch_nafazly_jobs),
         ("خمسات", fetch_khamsat_jobs),
         ("كفيل", fetch_kafiil_jobs),
         ("LinkedIn", fetch_linkedin_jobs)
