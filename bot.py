@@ -86,7 +86,7 @@ def telegram_webhook():
                     "• 🟢 **Wuzzuf** (وظف - مصر و Remote)\n"
                     "• 🟢 **Freelancer**\n"
                     "• 🟢 **مستقل (Mostaql)**\n"
-                    "• 🟢 **نفذلي (Nafazly)**\n"
+                    "• 🟢 **نفذلي (Nafezly)**\n"
                     "• 🟢 **خمسات (Khamsat)**\n"
                     "• 🟢 **كفيل (Kafiil)**\n"
                     "• 🟢 **PeoplePerHour**\n"
@@ -134,11 +134,11 @@ threading.Thread(target=run_flask, daemon=True).start()
 KEYWORDS = [
     "تحليل بيانات", "تحليل البيانات", "محلل بيانات", "محلل البيانات", "بايثون",
     "data analyst", "data analysis", "data analytics", 
-    "business analyst", "power bi developer", "tableau analyst", "python",
-    "داشبورد", "داش بورد", "لوحة قيادة", "dashboard", "dashboards",
+    "business analyst", "power bi", "tableau", "python", "sql",
+    "داشبورد", "داش بورد", "لوحة قيادة", "لوحة تحكم", "dashboard", "dashboards",
     "data visualization", "تصوير البيانات", "تمثيل البيانات", "تقارير", "إكسل", "اكسل", "excel",
     "إحصاء", "احصاء", "إحصائي", "احصائي", "biostatistics", "statistics", "statistical",
-    "data_analysis", "data science", "علم البيانات"
+    "data_analysis", "data science", "علم البيانات", "تنسيق بيانات", "قواعد بيانات"
 ]
 
 EXCLUDED_KEYWORDS = [
@@ -159,7 +159,7 @@ RSS_FEEDS = [
         "platform": "Guru",
         "url": "https://www.guru.com/rss/jobs/q/data-analysis/",
         "use_proxy": True,
-        "key_type": 2  # يستخدم المفتاح الثاني
+        "key_type": 2
     },
     {
         "platform": "We Work Remotely (Data)",
@@ -223,7 +223,7 @@ def send_telegram_message_to_all(platform, title, link, summary):
         send_direct_message(u_id, message)
 
 # ========================================================
-# 4. دوال جلب الوظائف مقسمة على المفتاحين
+# 4. دوال جلب الوظائف (مضاف إليها أسطر الطباعة التشخيصية)
 # ========================================================
 def fetch_feed_content(url, use_proxy=False, key_type=1):
     try:
@@ -251,7 +251,6 @@ def fetch_wuzzuf_jobs():
     ]
     for url in urls:
         try:
-            # يستعمل المفتاح الأول
             api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY_1}&url={requests.utils.quote(url)}"
             res = requests.get(api_url, timeout=30)
             print(f"🔍 [Wuzzuf via ScraperAPI #1] Status Code: {res.status_code}", flush=True)
@@ -275,7 +274,6 @@ def fetch_upwork_jobs():
     jobs = []
     url = "https://www.upwork.com/nx/search/jobs/?q=data%20analysis&sort=recency"
     try:
-        # يستعمل المفتاح الأول
         api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY_1}&url={requests.utils.quote(url)}"
         res = requests.get(api_url, timeout=30)
         print(f"🔍 [Upwork via ScraperAPI #1] Status Code: {res.status_code}", flush=True)
@@ -300,7 +298,6 @@ def fetch_peopleperhour_jobs():
     jobs = []
     url = "https://www.peopleperhour.com/freelance-data-analysis-jobs"
     try:
-        # يستعمل المفتاح الثاني الجديد
         api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY_2}&url={requests.utils.quote(url)}"
         res = requests.get(api_url, timeout=30)
         print(f"🔍 [PeoplePerHour via ScraperAPI #2] Status Code: {res.status_code}", flush=True)
@@ -321,27 +318,58 @@ def fetch_peopleperhour_jobs():
         print(f"❌ [PeoplePerHour Error]: {e}", flush=True)
     return jobs
 
+# 💡 دالة نفذلي مع سطر طباعة عدد المشاريع المجلوبة
 def fetch_nafazly_jobs():
     jobs = []
     try:
-        url = "https://nafazly.com/projects"
+        url = "https://nafezly.com/projects"
         res = scraper.get(url, timeout=12)
         print(f"🔍 [نفذلي] Status Code: {res.status_code}", flush=True)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
-            cards = soup.find_all('div', class_='project-card') or soup.select('.project-item, div[class*="project"]')
-            for card in cards:
-                a_tag = card.find('a', href=True)
-                if a_tag and '/project/' in a_tag['href']:
+            a_tags = soup.find_all('a', href=True)
+            for a_tag in a_tags:
+                href = a_tag['href']
+                if '/projects/' in href or '/project/' in href:
                     title = a_tag.text.strip()
-                    link = a_tag['href']
-                    if not link.startswith('http'):
-                        link = f"https://nafazly.com{link}"
-                    desc_elem = card.find('p') or card.find('div', class_='description')
-                    summary = desc_elem.text.strip() if desc_elem else "مشروع جديد على منصة نفذلي"
-                    jobs.append({"title": title, "link": link, "summary": summary, "category": "نفذلي"})
+                    if title and len(title) > 3 and title != "المشاريع":
+                        link = href if href.startswith('http') else f"https://nafezly.com{href}"
+                        jobs.append({
+                            "title": title, 
+                            "link": link, 
+                            "summary": f"مشروع جديد على منصة نفذلي: {title}", 
+                            "category": "نفذلي"
+                        })
+            print(f"📌 [نفذلي] تم العثور على {len(jobs)} مشروع في الصفحة", flush=True)
     except Exception as e:
         print(f"❌ [نفذلي Error]: {e}", flush=True)
+    return jobs
+
+# 💡 دالة كفيل مع سطر طباعة عدد المشاريع المجلوبة
+def fetch_kafiil_jobs():
+    jobs = []
+    try:
+        url = "https://kafiil.com/projects"
+        res = scraper.get(url, timeout=12)
+        print(f"🔍 [كفيل] Status Code: {res.status_code}", flush=True)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            a_tags = soup.find_all('a', href=True)
+            for a_tag in a_tags:
+                href = a_tag['href']
+                if '/project/' in href or '/projects/' in href:
+                    title = a_tag.text.strip()
+                    if title and len(title) > 3 and title != "المشاريع":
+                        link = href if href.startswith('http') else f"https://kafiil.com{href}"
+                        jobs.append({
+                            "title": title, 
+                            "link": link, 
+                            "summary": f"مشروع جديد على منصة كفيل: {title}", 
+                            "category": "كفيل"
+                        })
+            print(f"📌 [كفيل] تم العثور على {len(jobs)} مشروع في الصفحة", flush=True)
+    except Exception as e:
+        print(f"❌ [كفيل Error]: {e}", flush=True)
     return jobs
 
 def fetch_mostaql_jobs():
@@ -389,27 +417,6 @@ def fetch_khamsat_jobs():
         print(f"❌ [خمسات Error]: {e}", flush=True)
     return jobs
 
-def fetch_kafiil_jobs():
-    jobs = []
-    try:
-        url = "https://kafiil.com/projects"
-        res = scraper.get(url, timeout=12)
-        print(f"🔍 [كفيل] Status Code: {res.status_code}", flush=True)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, 'html.parser')
-            cards = soup.find_all('div', class_='project-item') or soup.find_all('a', class_='title')
-            for card in cards:
-                a_tag = card if card.name == 'a' else card.find('a', href=True)
-                if a_tag and '/project/' in a_tag.get('href', ''):
-                    title = a_tag.text.strip()
-                    link = a_tag['href']
-                    if not link.startswith('http'):
-                        link = f"https://kafiil.com{link}"
-                    jobs.append({"title": title, "link": link, "summary": "مشروع جديد على منصة كفيل", "category": "كفيل"})
-    except Exception as e:
-        print(f"❌ [كفيل Error]: {e}", flush=True)
-    return jobs
-
 def fetch_linkedin_jobs():
     jobs = []
     urls = [
@@ -440,10 +447,9 @@ def fetch_linkedin_jobs():
     return jobs
 
 # ========================================================
-# 5. حلقة الفحص الدوري (كل ساعتين للمنصات المحجوبة)
+# 5. حلقة الفحص الدوري
 # ========================================================
 def check_new_jobs(cycle_count):
-    # تفحص منصات البروكسي الآن كل 40 دورة (كل 120 دقيقة = ساعتين بالضبط)
     run_proxy_platforms = (cycle_count % 40 == 1)
     
     print(f"\n========================================================", flush=True)
